@@ -1,0 +1,29 @@
+<Project>
+  <!--
+    Copies the MCP server build output into $(OutDir)mcp-server/. The stdio client starts it from there as a
+    separate process, with its own deps.json and runtimeconfig.json and without sharing the host's config files.
+    ReferenceOutputAssembly=false: the host only needs the files next to it, not the server types.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="$(MSBuildThisFileDirectory)..\src\PublicData.McpServer\PublicData.McpServer.csproj"
+                      ReferenceOutputAssembly="false"
+                      Private="false" />
+  </ItemGroup>
+
+  <Target Name="CopyMcpServerOutput" AfterTargets="Build">
+    <MSBuild Projects="$(MSBuildThisFileDirectory)..\src\PublicData.McpServer\PublicData.McpServer.csproj"
+             Targets="GetTargetPath"
+             Properties="Configuration=$(Configuration)">
+      <Output TaskParameter="TargetOutputs" ItemName="_McpServerTargetPath" />
+    </MSBuild>
+    <PropertyGroup>
+      <_McpServerOutputDir>@(_McpServerTargetPath->'%(RootDir)%(Directory)')</_McpServerOutputDir>
+    </PropertyGroup>
+    <ItemGroup>
+      <_McpServerFiles Include="$(_McpServerOutputDir)**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_McpServerFiles)"
+          DestinationFiles="@(_McpServerFiles->'$(OutDir)mcp-server\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>
