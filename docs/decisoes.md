@@ -27,10 +27,9 @@ Docker Compose, onde o servidor MCP é um serviço separado. O cliente escolhe p
 **Por quê.** stdio é o caminho mais simples e verificável localmente (processo próprio, stderr próprio). HTTP
 é o caminho de produção: vários clientes, escala horizontal, sem sessão. Os dois têm teste de integração.
 
-**Limite consciente.** Nesta entrega o transporte HTTP não tem autenticação: fica só na rede interna do
-Compose, e o servidor recusa requisições com cabeçalho `Origin` (a spec pede validar o Origin contra DNS
-rebinding; o único cliente é a API .NET, que não envia Origin). Em produção entrariam autenticação
-(OAuth, como a spec prevê), rate limit e TLS.
+**Proteção do HTTP.** O servidor fica só na rede interna do Compose, exige JWT em `/mcp` (ADR-12) e recusa
+requisições com cabeçalho `Origin` (a spec pede validar o Origin contra DNS rebinding; o único cliente é a
+API .NET, que não envia Origin). Em produção entrariam TLS, rate limit e um provedor de identidade.
 
 ## ADR-03 · Microsoft.Extensions.AI + OllamaSharp (e não HTTP à mão nem Semantic Kernel)
 
@@ -158,3 +157,42 @@ Ollama em container como opção.
 
 **Por quê.** Evita baixar outra cópia de 2 GB e aproveita GPU/Metal que o Ollama nativo usa (em container,
 no Mac e no Windows sem configuração extra, a inferência fica em CPU).
+
+## ADR-12 · JWT entre a API e o servidor MCP (transporte HTTP)
+
+**Contexto.** Até aqui, a rede interna do Compose era a única barreira: qualquer container na mesma rede
+chamaria as ferramentas do servidor MCP.
+
+**Decisão.** No HTTP, `/mcp` exige `Authorization: Bearer` com um JWT HS256 que a API assina. O servidor
+valida emissor (`public-data-api`), audiência (`public-data-mcp`), validade (com 1 minuto de tolerância de
+relógio), assinatura e algoritmo: só HS256, então `alg: none` e confusão de algoritmo caem. Token ausente ou
+inválido recebe 401 antes de chegar ao handler MCP. `/health` continua aberto para o HEALTHCHECK. O stdio não
+muda, porque ali o cliente é o processo pai.
+
+**Token.** Vale 5 minutos, e a API assina outro quando falta menos de 1 minuto. Um vazamento vale pouco. O
+token vai num `DelegatingHandler`, e não num cabeçalho fixo (`AdditionalHeaders`), senão uma sessão longa
+continuaria mandando o primeiro token depois de vencido.
+
+**Chave.** Base64 de 384 bits aleatórios, sempre lida de arquivo: `Mcp:Auth:SigningKeyFile` no servidor e
+`Chat:Mcp:Auth:SigningKeyFile` na API, nunca em appsettings. No Compose, o container `mcp-key` gera a chave
+na primeira subida, num volume montado em `/run/secrets`, onde um Docker ou Kubernetes secret apareceria.
+Nenhuma chave vai para o repositório, e quem avalia continua com um comando só. Sem chave, ou com menos de
+256 bits, o servidor não sobe (falha fechada). `--Mcp:Auth:AllowAnonymous true` existe só para
+desenvolvimento local e deixa um aviso no log.
+
+**Em produção.** Chave simétrica compartilhada serve para dois serviços do mesmo dono. Com mais clientes, o
+caminho é um provedor de identidade (Keycloak, Entra ID) emitindo tokens por *client credentials* com chave
+assimétrica. O servidor valida pela chave pública publicada no JWKS (`Authority` no JwtBearer), sem segredo
+compartilhado, com rotação de chave e escopo por ferramenta. Para clientes MCP de terceiros, a spec prevê
+OAuth 2.1 com Protected Resource Metadata, que o SDK oferece em `AddMcp` (ModelContextProtocol.AspNetCore).
+
+**Testes.** Integração com o servidor real:
+
+- **200:** token válido, e `tools/call` pela `McpConnection`.
+- **401:** sem token, vencido, audiência errada, emissor errado, chave errada e `alg: none`.
+- **403:** Origin de navegador, mesmo com token válido.
+- **Sem token:** `/health` responde.
+- **Não sobe:** sem chave, com chave curta ou com chave fora de base64.
+
+No CI, o smoke do Compose confere `authentication: jwt` no status. Confere também que uma chamada sem token,
+feita de dentro da rede do Compose, recebe 401.

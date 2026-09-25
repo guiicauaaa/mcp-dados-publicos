@@ -40,7 +40,8 @@ docker compose up -d --build
 ```
 
 Abra **http://localhost:8080**. O compose usa o Ollama da sua máquina (`host.docker.internal:11434`), o
-que funciona direto no Docker Desktop (Windows e macOS).
+que funciona direto no Docker Desktop (Windows e macOS). O serviço `mcp-key` roda uma vez e termina: gera a
+chave do JWT entre a API e o servidor MCP (ADR-12).
 
 - **Ollama também em container**, o caminho mais simples no Linux (inferência em CPU e download de 2 GB
   na primeira vez): `docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build`.
@@ -124,7 +125,7 @@ flowchart LR
     W -- "POST /api/chat (SSE)" --> A[PublicData.Api<br/>ASP.NET Core 10]
     A <--> DB[(PostgreSQL<br/>conversas e auditoria)]
     A -- "IChatClient<br/>/api/chat" --> O[Ollama<br/>llama3.2-mcp-v1]
-    A -- "MCP: tools/list, tools/call<br/>stdio ou Streamable HTTP" --> M[PublicData.McpServer<br/>.NET 10]
+    A -- "MCP: tools/list, tools/call<br/>stdio ou Streamable HTTP + JWT" --> M[PublicData.McpServer<br/>.NET 10]
     M -- HTTPS --> T[API Transferegov<br/>emendas Pix]
 ```
 
@@ -193,6 +194,10 @@ Resumo. O contexto e os números de cada uma estão em [docs/decisoes.md](docs/d
   já formatado, nomes de campo que guiam a redação, histórico só com texto, reparo de chamadas
   malformadas e a Fonte montada pelo cliente.
 - **Trilha de auditoria** de toda chamada MCP no PostgreSQL: o que a IA consultou fica registrado.
+- **JWT entre a API e o servidor MCP** no transporte HTTP: token HS256 de 5 minutos, validado por emissor,
+  audiência, validade, assinatura e algoritmo; chave gerada na primeira subida do Compose, fora do
+  repositório. Em produção seria um provedor de identidade com chave assimétrica (JWKS), como no
+  [ADR-12](docs/decisoes.md#adr-12--jwt-entre-a-api-e-o-servidor-mcp-transporte-http).
 - **Transferegov** entre as 8 APIs públicas testadas: sem chave, rápida e com filtro no servidor
   ([comparação](docs/decisoes.md#adr-04--transferegov-emendas-pix-como-api-externa)).
 
@@ -228,13 +233,15 @@ npm run test:ci
 ```
 
 - **.NET (xUnit v3, Microsoft Testing Platform):** unitários com respostas reais do Transferegov gravadas,
-  integração com o servidor MCP real por stdio e por HTTP, o pipeline de produção com um modelo roteirizado
+  integração com o servidor MCP real por stdio e por HTTP (inclusive os casos de JWT: sem token, vencido,
+  audiência, emissor ou chave errados e `alg: none` recebem 401), o pipeline de produção com um modelo roteirizado
   no lugar do Ollama e a API de ponta a ponta com PostgreSQL. Os testes da API usam um banco descartável
   quando `PUBLICDATA_TEST_DB` está definida (ex.: `Host=localhost;Username=postgres;Password=postgres`);
   sem ela, são pulados.
 - **Angular (Vitest):** parser de SSE, formatação da resposta, cartão MCP e cabeçalho de status.
 - **CI** ([ci.yml](.github/workflows/ci.yml)): .NET no Linux com PostgreSQL e no Windows, Angular, e o
-  Docker Compose de verdade com smoke test (MCP por HTTP entre containers, auditoria e frontend).
+  Docker Compose de verdade com smoke test (MCP por HTTP com JWT entre containers, 401 sem token,
+  auditoria e frontend).
 - **CD** ([cd.yml](.github/workflows/cd.yml)): com o CI verde num push na `main`, publica as imagens `app`
   e `mcp-server` no GitHub Container Registry (tags `latest` e SHA). Não há servidor para implantar, porque o
   modelo roda no Ollama de quem usa. Com os pacotes públicos, `docker compose pull` seguido de
@@ -252,9 +259,11 @@ API (`src/PublicData.Api/appsettings.json`, ou variáveis de ambiente com `__`, 
 | `Chat:ExposedTools` | `["get_city_amendments"]` | Ferramentas oferecidas ao modelo. Para oferecer também a de data/hora: `Chat__ExposedTools__1=get_current_datetime`. |
 | `Chat:Mcp:Transport` | `stdio` | `stdio` (processo filho) ou `http`. |
 | `Chat:Mcp:HttpUrl` | — | Endpoint Streamable HTTP, ex.: `http://mcp-server:8080/mcp`. |
+| `Chat:Mcp:Auth:SigningKeyFile` | — | Arquivo com a chave do JWT (base64, 256 bits ou mais), a mesma do `Mcp:Auth:SigningKeyFile` do servidor. Só no HTTP; o Compose já configura. |
 | `Chat:NumCtx`, `Chat:KeepAlive` | `8192`, `30m` | Mesmo contexto no aquecimento e no chat (senão o Ollama recarrega o modelo). |
 
-Console: `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (ou `--model`) e `MCP_HTTP_URL` (ou `--mcp-http`).
+Console: `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (ou `--model`), `MCP_HTTP_URL` (ou `--mcp-http`) e
+`MCP_JWT_KEY_FILE` (ou `--mcp-key`).
 
 ## Partindo do exemplo de referência
 
@@ -279,10 +288,10 @@ parte da mesma ideia e do mesmo transporte, e evolui estes pontos:
 - **Valor indicado não é valor pago:** a ferramenta soma o valor indicado nos planos de ação. O modelo é
   instruído a falar em valor indicado, mas tende a repetir o verbo da pergunta ("recebeu"); a linha de
   Fonte deixa a distinção explícita. Empenho e pagamento estão em outros endpoints do Transferegov.
-- **Sem autenticação:** a API e o servidor MCP por HTTP não têm login. O compose publica a API só em
-  `127.0.0.1` e deixa o MCP só na rede interna; o servidor MCP recusa requisições com `Origin` de navegador
-  (proteção contra DNS rebinding). Para produção entrariam autenticação, rate limit e política de retenção
-  da auditoria.
+- **Sem login de usuário:** a API não autentica quem usa o chat; o compose a publica só em `127.0.0.1`.
+  Entre a API e o servidor MCP há JWT, e o servidor também recusa `Origin` de navegador (proteção contra
+  DNS rebinding). Para produção entrariam login na API, provedor de identidade com chave assimétrica, TLS
+  entre os serviços, rate limit e política de retenção da auditoria.
 - **Dados vivos:** novos planos entram a qualquer momento, e os números acima são de 25/09/2026.
 - **Seguimentos ambíguos** ("e nesse ano?", sem ano na conversa) podem levar o modelo a perguntar de novo.
 - No modo HTTP (Docker), o log do servidor MCP fica no container (`docker compose logs mcp-server`), não no
@@ -303,6 +312,7 @@ parte da mesma ideia e do mesmo transporte, e evolui estes pontos:
 
 ```
 ├─ src/
+│  ├─ Shared/                 leitura da chave do JWT, compilada no servidor e no cliente
 │  ├─ PublicData.McpServer/   servidor MCP (stdio e HTTP) + Dockerfile
 │  ├─ PublicData.Chat.Core/   núcleo do chat (MCP, Ollama, pipeline)
 │  ├─ PublicData.Api/         API REST + SSE + EF Core + Dockerfile
@@ -312,7 +322,7 @@ parte da mesma ideia e do mesmo transporte, e evolui estes pontos:
 ├─ ollama/Modelfile           modelo derivado do llama3.2
 ├─ docs/                      decisões técnicas, resultado do smoke e imagens
 ├─ scripts/                   atualização do snapshot de municípios
-├─ docker-compose.yml         PostgreSQL + MCP + API
+├─ docker-compose.yml         PostgreSQL + chave do JWT + MCP + API
 └─ .github/workflows/         CI e CD
 ```
 
