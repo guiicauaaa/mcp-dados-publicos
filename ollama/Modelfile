@@ -1,0 +1,50 @@
+# Mesmos pesos do llama3.2. Só o parágrafo de ferramentas do TEMPLATE foi reescrito ("decida primeiro").
+# O template oficial manda "respond with a JSON for a function call" sempre que há ferramentas, e o modelo
+# chamava ferramenta até para "oi". Medido: 6/18 decisões certas com o original, 18/18 com este.
+# O chat cria este modelo sozinho pela API do Ollama. Para criar à mão:
+#   ollama create llama3.2-mcp-v1 -f ollama/Modelfile
+FROM llama3.2
+TEMPLATE """<|start_header_id|>system<|end_header_id|>
+
+Cutting Knowledge Date: December 2023
+
+{{ if .System }}{{ .System }}
+{{- end }}
+{{- if .Tools }}When you receive a tool call response, use the output to format an answer to the orginal user question.
+
+You are a helpful assistant with tool calling capabilities.
+{{- end }}<|eot_id|>
+{{- range $i, $_ := .Messages }}
+{{- $last := eq (len (slice $.Messages $i)) 1 }}
+{{- if eq .Role "user" }}<|start_header_id|>user<|end_header_id|>
+{{- if and $.Tools $last }}
+
+You have access to the functions below. First decide whether answering the prompt requires data that only one of these functions can provide.
+- If it does, respond ONLY with a JSON function call in the format {"name": function name, "parameters": dictionary of argument name and its value}. Do not use variables.
+- If it does not (greetings, small talk, general knowledge, definitions, opinions, or questions about this conversation), do NOT call any function. Answer the prompt directly, in plain text, in the same language as the prompt.
+
+{{ range $.Tools }}
+{{- . }}
+{{ end }}
+{{ .Content }}<|eot_id|>
+{{- else }}
+
+{{ .Content }}<|eot_id|>
+{{- end }}{{ if $last }}<|start_header_id|>assistant<|end_header_id|>
+
+{{ end }}
+{{- else if eq .Role "assistant" }}<|start_header_id|>assistant<|end_header_id|>
+{{- if .ToolCalls }}
+{{ range .ToolCalls }}
+{"name": "{{ .Function.Name }}", "parameters": {{ .Function.Arguments }}}{{ end }}
+{{- else }}
+
+{{ .Content }}
+{{- end }}{{ if not $last }}<|eot_id|>{{ end }}
+{{- else if eq .Role "tool" }}<|start_header_id|>ipython<|end_header_id|>
+
+{{ .Content }}<|eot_id|>{{ if $last }}<|start_header_id|>assistant<|end_header_id|>
+
+{{ end }}
+{{- end }}
+{{- end }}"""
