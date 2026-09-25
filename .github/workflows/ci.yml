@@ -1,0 +1,130 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  dotnet-linux:
+    name: .NET · Linux + PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # Liga os testes da API (WebApplicationFactory) contra este PostgreSQL; cada execução cria e apaga seu banco.
+      PUBLICDATA_TEST_DB: Host=localhost;Port=5432;Username=postgres;Password=postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore PublicData.slnx
+      - run: dotnet build PublicData.slnx -c Release --no-restore
+      - run: dotnet test --solution PublicData.slnx -c Release --no-build
+
+  dotnet-windows:
+    name: .NET · Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore PublicData.slnx
+      - run: dotnet build PublicData.slnx -c Release --no-restore
+      # Sem PostgreSQL aqui: os testes da API são pulados; os demais (inclusive MCP por stdio e HTTP) rodam.
+      - run: dotnet test --solution PublicData.slnx -c Release --no-build
+
+  web:
+    name: Angular
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/PublicData.Web
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/PublicData.Web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test:ci
+      - run: npm run build
+
+  docker:
+    name: Docker Compose (smoke)
+    needs: [dotnet-linux, web]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build das imagens
+        run: docker compose build
+
+      - name: Subir PostgreSQL, servidor MCP (HTTP) e API
+        run: docker compose up -d --wait --wait-timeout 240
+
+      - name: Smoke test (sem Ollama no runner)
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=http://localhost:8080
+
+          curl -fsS "$base/health"
+
+          # O MCP conecta em segundo plano: espera o estado "ready".
+          for i in $(seq 1 30); do
+            status=$(curl -fsS "$base/api/status")
+            [ "$(jq -r .mcp.state <<<"$status")" = ready ] && break
+            sleep 2
+          done
+          jq . <<<"$status"
+          test "$(jq -r .mcp.state <<<"$status")" = ready
+          test "$(jq -r .mcp.transport <<<"$status")" = http
+          test "$(jq -r .mcp.protocolVersion <<<"$status")" = 2026-07-28
+          test "$(jq -r .database.state <<<"$status")" = ready
+          jq -e '.mcp.tools | map(.name) | index("get_city_amendments")' <<<"$status"
+
+          # Chamada MCP real entre os containers (a validação responde sem precisar de internet).
+          result=$(curl -fsS -X POST "$base/api/mcp/tools/get_city_amendments/invoke" \
+            -H 'Content-Type: application/json' -d '{"arguments":{"city":"Campinas","state":"XX"}}')
+          jq . <<<"$result"
+          test "$(jq -r .isError <<<"$result")" = true
+          test "$(jq -r .transport <<<"$result")" = http
+          jq -e '.result.error | contains("inválida")' <<<"$result"
+
+          # Auditoria gravada no PostgreSQL e frontend Angular servido pela API.
+          curl -fsS "$base/api/audit/tool-calls?origin=manual" | jq -e '.total >= 1'
+          curl -fsS "$base/" | grep -q '<app-root>'
+
+      - name: Logs dos containers
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Derrubar
+        if: always()
+        run: docker compose down -v
