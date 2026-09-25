@@ -14,6 +14,10 @@ updates:
     groups:
       angular:
         patterns: ["@angular/*", "@angular-devkit/*"]
+    ignore:
+      # Versões principais (Angular, TypeScript, Vitest) sobem juntas com `ng update`, não uma a uma.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
@@ -22,6 +26,10 @@ updates:
     directory: /src/PublicData.Api
     schedule:
       interval: monthly
+    ignore:
+      # Fica no Node LTS (24); versões ímpares não são LTS.
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /src/PublicData.McpServer
     schedule:
