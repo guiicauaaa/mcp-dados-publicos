@@ -27,6 +27,7 @@ services:
       context: .
       dockerfile: src/PublicData.McpServer/Dockerfile
     image: ${IMAGE_REGISTRY:-ghcr.io/guiicauaaa/mcp-dados-publicos}/mcp-server:${IMAGE_TAG:-latest}
+    restart: unless-stopped
     # Sem porta publicada: só a API conversa com ele, pela rede interna do Compose.
 
   app:
@@ -34,6 +35,7 @@ services:
       context: .
       dockerfile: src/PublicData.Api/Dockerfile
     image: ${IMAGE_REGISTRY:-ghcr.io/guiicauaaa/mcp-dados-publicos}/app:${IMAGE_TAG:-latest}
+    restart: unless-stopped
     ports:
       # Só na própria máquina: a API não tem autenticação (é uma demo local).
       - "127.0.0.1:${APP_PORT:-8080}:8080"

@@ -1,8 +1,8 @@
 name: CD
 
-# Publica as imagens no GitHub Container Registry depois que o CI passa na main.
-# Não existe servidor para implantar: o modelo roda no Ollama da máquina de quem usa. As imagens deixam o
-# `docker compose` pronto sem build local (docker compose pull && docker compose up -d).
+# Publica as imagens no GitHub Container Registry depois que o CI passa num push na main.
+# Não existe servidor para implantar: o modelo roda no Ollama da máquina de quem usa. Com os pacotes
+# públicos, `docker compose pull` e `docker compose up -d` dispensam o build local.
 on:
   workflow_run:
     workflows: [CI]
@@ -14,10 +14,20 @@ permissions:
   contents: read
   packages: write
 
+# Publicações em fila, nunca em paralelo: uma execução antiga não sobrescreve o :latest de uma nova.
+concurrency:
+  group: cd-main
+  cancel-in-progress: false
+
 jobs:
   publish:
     name: Publicar ${{ matrix.image }}
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    # Só o CI de um PUSH na main deste repositório: um PR (inclusive de fork com branch "main") nunca publica.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -42,6 +52,8 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v6
         with:
+          # Labels (revision) a partir do commit compilado, não do github.sha do evento workflow_run.
+          context: git
           images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
           tags: |
             type=raw,value=latest
