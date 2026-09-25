@@ -26,7 +26,7 @@ public sealed class AmendmentTools(
     // answer language comes from the system prompt. The Title (pt-BR) is for humans in the UI.
     [McpServerTool(Name = ToolName, Title = "Emendas Pix de um município",
         ReadOnly = true, Idempotent = true, OpenWorld = true, UseStructuredContent = false)]
-    [Description("Gets the 'emendas Pix' (special-transfer parliamentary amendments) sent to one Brazilian municipality in one year: total amount, which congress members sent them and for which policy areas. Official federal data from Transferegov. Use ONLY when the user asks about emendas, amendments or money sent by deputies or senators to a city.")]
+    [Description("Gets the 'emendas Pix' (special-transfer parliamentary amendments) sent to one Brazilian municipality in one year: total amount indicated in the action plans (not the amount already paid), which congress members sent them and for which policy areas. Official federal data from Transferegov. Use ONLY when the user asks about emendas, amendments or money sent by deputies or senators to a city.")]
     public async Task<AmendmentSummary> GetCityAmendments(
         [Description("Municipality name, for example Campinas")] string city,
         [Description("Two-letter state code (UF), for example SP. Leave empty if unknown.")] string state = "",

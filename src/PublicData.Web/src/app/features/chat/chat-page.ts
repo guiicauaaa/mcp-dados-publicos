@@ -40,8 +40,9 @@ export class ChatPage {
 
   protected readonly suggestions = [
     'Olá! O que você consegue fazer?',
-    'Quanto Campinas (SP) recebeu de emendas Pix em 2026 e de quais parlamentares?',
-    'Quanto Recife recebeu de emendas Pix em 2025?',
+    // "Quanto foi indicado": the model mirrors the verb of the question, and the data is the indicated value.
+    'Quanto foi indicado em emendas Pix para Campinas (SP) em 2026 e por quais parlamentares?',
+    'Quanto foi indicado em emendas Pix para Recife em 2025?',
     'Quanto Santa Rita recebeu de emendas Pix em 2026?',
   ];
 

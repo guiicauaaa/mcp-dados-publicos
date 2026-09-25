@@ -7,7 +7,9 @@ namespace PublicData.McpServer.Transferegov;
 /// <summary>Pure aggregation: raw plans in, compact pt-BR summary out.</summary>
 public static class AmendmentSummarizer
 {
-    public const string Source = "Transferegov - Transferências Especiais (emendas Pix), governo federal";
+    // "valor indicado" in the source itself: the Fonte line is printed by the client on every answer with data,
+    // so the indicated-vs-paid distinction does not depend on the model's wording (it tends to mirror "recebeu").
+    public const string Source = "Transferegov - Transferências Especiais (emendas Pix), governo federal; valor indicado nos planos de ação";
     private const int TopCount = 5;
 
     public static AmendmentSummary Summarize(Municipality city, int year, IReadOnlyList<ActionPlan> plans, DateTimeOffset fetchedAt)
