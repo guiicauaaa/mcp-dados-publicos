@@ -49,4 +49,16 @@ public sealed class PromptAndModelfileTests
     [InlineData("12:00:01 info: Microsoft.Hosting.Lifetime[0] Application started.")]
     [InlineData("   at System.Threading.Tasks.Task.Wait()")]
     public void Server_log_filter_hides_sdk_noise(string line) => Assert.False(ServerLogFilter.TryFormatForScreen(line, out _));
+
+    [Fact]
+    public void Sdk_failure_line_is_parsed_without_the_stack_trace()
+    {
+        var entry = ServerLogFilter.Parse("14:00:14 fail: ModelContextProtocol.Server.McpServer[1433779783] \"get_city_amendments\" threw an unhandled exception. ModelContextProtocol.McpException: UF 'XX' inválida.    at PublicData.McpServer.Tools.AmendmentTools.GetCityAmendments()");
+
+        Assert.Equal("14:00:14", entry.Time);
+        Assert.Equal("fail", entry.Level);
+        Assert.Equal("ModelContextProtocol.Server.McpServer", entry.Category);
+        Assert.EndsWith("UF 'XX' inválida.", entry.Message);
+        Assert.False(entry.IsServerOwn);
+    }
 }

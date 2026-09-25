@@ -19,6 +19,7 @@
          integration tests start the real server process over stdio and HTTP. -->
     <ProjectReference Include="..\..\src\PublicData.McpServer\PublicData.McpServer.csproj" />
     <ProjectReference Include="..\..\src\PublicData.Chat.Core\PublicData.Chat.Core.csproj" />
+    <ProjectReference Include="..\..\src\PublicData.Api\PublicData.Api.csproj" />
   </ItemGroup>
 
   <ItemGroup>
