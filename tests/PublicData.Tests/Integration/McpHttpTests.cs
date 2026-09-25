@@ -85,6 +85,22 @@ public sealed class McpHttpTests : IAsyncLifetime
         Assert.Contains("UF 'XX' inválida", result.Content.OfType<TextContentBlock>().Single().Text);
     }
 
+    [Fact]
+    public async Task Browser_origin_is_refused_to_prevent_dns_rebinding()
+    {
+        using var http = new HttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, _endpoint)
+        {
+            Content = new StringContent("""{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}""", System.Text.Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Add("Origin", "http://evil.example");
+        request.Headers.Accept.ParseAdd("application/json, text/event-stream");
+
+        using var response = await http.SendAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
     private static int FreePort()
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);

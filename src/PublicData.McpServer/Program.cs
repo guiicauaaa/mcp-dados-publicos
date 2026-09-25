@@ -106,6 +106,23 @@ public static class Program
             .WithPublicDataTools();
 
         var app = builder.Build();
+
+        // The MCP spec asks Streamable HTTP servers to validate Origin (DNS rebinding). The only client is the
+        // API, a server-side .NET client that sends no Origin; browser requests are refused unless allowed.
+        var allowedOrigins = app.Configuration.GetSection("Mcp:AllowedOrigins").Get<string[]>() ?? [];
+        app.Use(async (context, next) =>
+        {
+            var origin = context.Request.Headers.Origin.ToString();
+            if (origin.Length > 0 && context.Request.Path.StartsWithSegments("/mcp")
+                && !allowedOrigins.Contains(origin, StringComparer.OrdinalIgnoreCase))
+            {
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+
+            await next(context);
+        });
+
         app.MapMcp("/mcp");
         app.MapGet("/health", () => Results.Ok(new { status = "ok", server = McpServerSetup.Name, version = McpServerSetup.Version }));
         await app.RunAsync();
