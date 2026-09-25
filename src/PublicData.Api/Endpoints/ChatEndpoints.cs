@@ -9,7 +9,7 @@ public static class ChatEndpoints
 {
     public static void MapChatEndpoints(this IEndpointRouteBuilder app)
     {
-        app.MapPost("/api/chat", (ChatRequest request, ChatService chat, ILoggerFactory loggers, CancellationToken cancellationToken) =>
+        app.MapPost("/api/chat", (ChatRequest request, IServiceScopeFactory scopes, ILoggerFactory loggers, CancellationToken cancellationToken) =>
             {
                 // The MCP events are published by the tool tracer while the model works, so the turn runs
                 // in the background and writes to a channel that the SSE response drains.
@@ -21,6 +21,10 @@ public static class ChatEndpoints
                 {
                     try
                     {
+                        // Own scope (and DbContext): if the browser closes the stream, the request scope ends, but
+                        // a turn that already has an answer still saves it and its audit rows.
+                        await using var scope = scopes.CreateAsyncScope();
+                        var chat = scope.ServiceProvider.GetRequiredService<ChatService>();
                         await chat.RunTurnAsync(request, Emit, cancellationToken);
                     }
                     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

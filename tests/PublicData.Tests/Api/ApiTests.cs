@@ -138,6 +138,24 @@ public sealed class ApiTests(ApiFactory api) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Reconnect_replaces_the_mcp_session_and_the_new_one_stays_up()
+    {
+        Assert.SkipWhen(ApiFactory.SkipReason is not null, ApiFactory.SkipReason ?? "");
+
+        using var response = await Client.PostAsync("/api/mcp/reconnect", null, Ct);
+        var status = await response.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.Equal("ready", status.GetProperty("state").GetString());
+
+        // The old session ending must not drop the new one (the gateway watches Completion of each session).
+        await Task.Delay(TimeSpan.FromSeconds(2), Ct);
+        using var call = await Client.PostAsJsonAsync("/api/mcp/tools/get_current_datetime/invoke", new { arguments = new { } }, Ct);
+        var result = await call.Content.ReadFromJsonAsync<JsonElement>(Ct);
+        Assert.False(result.GetProperty("isError").GetBoolean());
+        var after = await Client.GetFromJsonAsync<JsonElement>("/api/status", Ct);
+        Assert.Equal("ready", after.GetProperty("mcp").GetProperty("state").GetString());
+    }
+
+    [Fact]
     public async Task Unknown_tool_is_not_found()
     {
         Assert.SkipWhen(ApiFactory.SkipReason is not null, ApiFactory.SkipReason ?? "");

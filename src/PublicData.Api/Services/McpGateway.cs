@@ -74,14 +74,43 @@ public sealed class McpGateway(ChatSettings settings, ILoggerFactory loggerFacto
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        while (!stoppingToken.IsCancellationRequested && _connection is null)
+        while (!stoppingToken.IsCancellationRequested)
         {
-            await TryConnectAsync(stoppingToken);
-            if (_connection is null)
+            var connection = await GetConnectionAsync(stoppingToken);
+            if (connection is null)
             {
                 await Task.Delay(RetryDelay, stoppingToken);
+                continue;
             }
+
+            // Completes when the session ends: the stdio server process died or the transport closed.
+            var details = await connection.Client.Completion.WaitAsync(stoppingToken);
+            await DropAsync(connection, $"A sessão MCP terminou ({details.Exception?.Message ?? "o servidor encerrou a conexão"}). Reconectando…");
+            await Task.Delay(RetryDelay, stoppingToken);
         }
+    }
+
+    /// <summary>Forgets a dead session, unless it was already replaced (ReconnectAsync also ends the old one).</summary>
+    private async Task DropAsync(McpConnection connection, string message)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            if (!ReferenceEquals(_connection, connection))
+            {
+                return;
+            }
+
+            _connection = null;
+            _status = _status with { State = ComponentState.Unavailable, Message = message };
+            _logger.LogWarning("{Message}", message);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        await connection.DisposeAsync();
     }
 
     private async Task TryConnectAsync(CancellationToken cancellationToken)
