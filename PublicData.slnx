@@ -4,4 +4,7 @@
     <Project Path="src/PublicData.Chat.Core/PublicData.Chat.Core.csproj" />
     <Project Path="src/PublicData.Chat/PublicData.Chat.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/PublicData.Tests/PublicData.Tests.csproj" />
+  </Folder>
 </Solution>
