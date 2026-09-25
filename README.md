@@ -52,7 +52,8 @@ chave do JWT entre a API e o servidor MCP (ADR-12).
 
 ### Opção B: sem Docker
 
-Precisa de [.NET SDK 10](https://dotnet.microsoft.com/download), Node 24 e PostgreSQL local (usuário
+Precisa de [.NET SDK 10](https://dotnet.microsoft.com/download), Node 24.15 ou mais recente (o Angular 22
+exige) e PostgreSQL local (usuário
 `postgres`, senha `postgres`; ou ajuste `ConnectionStrings:Default`). O banco é criado pelas migrations.
 Os comandos abaixo, um por linha, funcionam em bash, zsh, cmd e PowerShell:
 
