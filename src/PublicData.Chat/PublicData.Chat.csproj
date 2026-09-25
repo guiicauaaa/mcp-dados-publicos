@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>PublicData.Chat</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PublicData.Chat.Core\PublicData.Chat.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="PublicData.Tests" />
+  </ItemGroup>
+
+  <!-- Running or building this project also builds the MCP server and copies it to bin/.../mcp-server/. -->
+  <Import Project="..\..\build\CopyMcpServer.targets" />
+
+</Project>
