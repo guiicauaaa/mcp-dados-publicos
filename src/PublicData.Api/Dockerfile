@@ -2,7 +2,7 @@
 # API + Angular frontend in one image (same origin, no CORS). Build context: repository root.
 
 # 1) Angular: the build output goes to src/PublicData.Api/wwwroot (see angular.json).
-FROM node:24-alpine AS web
+FROM node:25-alpine AS web
 WORKDIR /src/src/PublicData.Web
 COPY src/PublicData.Web/package.json src/PublicData.Web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
