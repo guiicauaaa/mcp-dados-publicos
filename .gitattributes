@@ -1,0 +1,8 @@
+* text=auto
+
+# O template do modelo derivado vai byte a byte para o Ollama: nunca converter para CRLF.
+ollama/Modelfile text eol=lf
+
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.csv text eol=lf
