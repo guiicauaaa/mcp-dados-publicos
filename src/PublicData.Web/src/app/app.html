@@ -1,0 +1,27 @@
+<a class="skip-link" href="#main">Pular para o conteúdo</a>
+
+<header class="topbar">
+  <a class="brand" routerLink="/" aria-label="Assistente de Dados Públicos, página inicial">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect x="2" y="2" width="12" height="12" rx="2" />
+      <rect x="18" y="2" width="12" height="12" rx="2" class="alt" />
+      <rect x="18" y="18" width="12" height="12" rx="2" />
+    </svg>
+    <span class="names">
+      <span class="name">Assistente de Dados Públicos</span>
+      <span class="tagline">IA local (Ollama) · MCP · .NET 10</span>
+    </span>
+  </a>
+
+  <nav aria-label="Principal">
+    <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }" ariaCurrentWhenActive="page">Chat</a>
+    <a routerLink="/auditoria" routerLinkActive="active" ariaCurrentWhenActive="page">Auditoria</a>
+    <a routerLink="/ferramentas" routerLinkActive="active" ariaCurrentWhenActive="page">Ferramentas MCP</a>
+  </nav>
+
+  <app-status-chips />
+</header>
+
+<main id="main" tabindex="-1">
+  <router-outlet />
+</main>

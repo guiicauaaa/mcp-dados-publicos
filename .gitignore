@@ -480,3 +480,7 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Build do Angular (gerado por npm run build em src/PublicData.Web)
+src/PublicData.Api/wwwroot/
+

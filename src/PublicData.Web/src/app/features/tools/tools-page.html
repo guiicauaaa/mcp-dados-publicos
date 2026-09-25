@@ -1,0 +1,102 @@
+<div class="page">
+  <header class="page-header">
+    <div>
+      <h1>Ferramentas MCP</h1>
+      <p class="lead">
+        O que o servidor MCP anuncia no <code>tools/list</code>. O modelo recebe essas descrições e decide sozinho quando chamar
+        cada ferramenta. Aqui você também pode chamá-las diretamente, sem o modelo.
+      </p>
+    </div>
+  </header>
+
+  @if (status(); as s) {
+    <section class="server" aria-label="Servidor MCP">
+      <div><span class="label">Servidor</span>{{ s.mcp.serverName ?? '—' }} {{ s.mcp.serverVersion }}</div>
+      <div><span class="label">Transporte</span>{{ s.mcp.transport }}</div>
+      <div><span class="label">Protocolo MCP</span>{{ s.mcp.protocolVersion ?? '—' }}</div>
+      <div class="endpoint"><span class="label">Endpoint</span><code>{{ s.mcp.endpoint ?? '—' }}</code></div>
+      @if (s.mcp.state !== 'ready') {
+        <p class="notice" role="alert">{{ s.mcp.message }}</p>
+      }
+    </section>
+  }
+
+  @for (tool of tools(); track tool.name) {
+    <article class="tool" [attr.aria-labelledby]="'tool-' + tool.name">
+      <header>
+        <h2 [id]="'tool-' + tool.name"><code>{{ tool.name }}</code></h2>
+        @if (tool.title) {
+          <span class="title">{{ tool.title }}</span>
+        }
+        @if (tool.offeredToModel) {
+          <span class="badge offered">oferecida ao modelo</span>
+        } @else {
+          <span class="badge" title="A data de Brasília já vai no system prompt; medido: com esta ferramenta o llama3.2 chamava ferramentas em cumprimentos.">
+            não oferecida ao modelo
+          </span>
+        }
+      </header>
+      <p class="description">{{ tool.description }}</p>
+
+      @if (parameters(tool).length > 0) {
+        <table>
+          <caption class="sr-only">Parâmetros de {{ tool.name }}</caption>
+          <thead>
+            <tr><th scope="col">Parâmetro</th><th scope="col">Tipo</th><th scope="col">Descrição</th></tr>
+          </thead>
+          <tbody>
+            @for (p of parameters(tool); track p.name) {
+              <tr>
+                <td><code>{{ p.name }}</code>@if (p.required) {<span class="required" title="obrigatório">*</span>}</td>
+                <td>{{ p.type }}</td>
+                <td>{{ p.description }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+
+      <div class="try">
+        <label [for]="'args-' + tool.name">Argumentos (JSON)</label>
+        <textarea [id]="'args-' + tool.name" rows="6" spellcheck="false" [value]="draftFor(tool)" (input)="onDraft(tool, $event)"></textarea>
+        <button type="button" class="button primary" (click)="invoke(tool)" [disabled]="running() === tool.name">
+          {{ running() === tool.name ? 'Chamando…' : 'Chamar via MCP' }}
+        </button>
+      </div>
+
+      @if (failureOf(tool); as failure) {
+        <p class="notice" role="alert">{{ failure }}</p>
+      }
+      @if (resultOf(tool); as r) {
+        <p class="result-meta" role="status">
+          {{ r.isError ? 'Erro da ferramenta' : 'Sucesso' }} em {{ formatDuration(r.elapsedMs) }} · {{ r.server }} via {{ r.transport }} ·
+          registrado na auditoria
+        </p>
+        <app-json-view [value]="r.result" [label]="'Resultado de ' + tool.name" />
+      }
+    </article>
+  } @empty {
+    <p class="notice">Nenhuma ferramenta: o servidor MCP ainda não conectou.</p>
+  }
+
+  <section class="log" aria-labelledby="log-title">
+    <header>
+      <h2 id="log-title">Log do processo servidor MCP</h2>
+      <label class="toggle"><input type="checkbox" [checked]="showSdkLines()" (change)="toggleSdkLines($event)" /> mostrar linhas do SDK</label>
+    </header>
+    <p class="hint">
+      Linhas do stderr do servidor (no modo stdio ele é outro processo). É a prova de que a consulta saiu do servidor MCP.
+    </p>
+    <ol class="lines">
+      @for (line of visibleLog(); track line.sequence) {
+        <li [class]="line.level ?? 'raw'">
+          <time>{{ line.at | date: 'HH:mm:ss' }}</time>
+          <span class="level">{{ line.level ?? '' }}</span>
+          <span class="message">{{ line.message }}</span>
+        </li>
+      } @empty {
+        <li class="empty">Sem linhas ainda (no modo HTTP, o log fica no container do servidor).</li>
+      }
+    </ol>
+  </section>
+</div>

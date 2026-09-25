@@ -1,0 +1,149 @@
+<div class="page">
+  <header class="page-header">
+    <div>
+      <h1>Auditoria das chamadas MCP</h1>
+      <p class="lead">
+        Toda consulta que o modelo (ou você, pelo painel de ferramentas) fez ao servidor MCP fica registrada no PostgreSQL:
+        ferramenta, argumentos, resultado, duração e qual servidor respondeu.
+      </p>
+    </div>
+    <button type="button" class="button secondary" (click)="reload()">Atualizar</button>
+  </header>
+
+  @if (summary(); as s) {
+    <section class="kpis" aria-label="Resumo">
+      <div class="kpi">
+        <span class="value">{{ s.total }}</span>
+        <span class="label">chamadas</span>
+      </div>
+      <div class="kpi">
+        <span class="value">{{ s.errors }}</span>
+        <span class="label">com erro ({{ errorRate() | number: '1.0-1' }}%)</span>
+      </div>
+      <div class="kpi">
+        <span class="value">{{ formatDuration(s.averageDurationMs) || '0 ms' }}</span>
+        <span class="label">tempo médio</span>
+      </div>
+      <div class="kpi">
+        <span class="value">{{ s.last24Hours }}</span>
+        <span class="label">nas últimas 24 h</span>
+      </div>
+    </section>
+  }
+
+  <section class="filters" aria-label="Filtros">
+    <label>
+      Ferramenta
+      <select (change)="setFilter('tool', $event)">
+        <option value="">Todas</option>
+        @for (name of toolNames(); track name) {
+          <option [value]="name">{{ name }}</option>
+        }
+      </select>
+    </label>
+    <label>
+      Status
+      <select (change)="setFilter('status', $event)">
+        <option value="">Todos</option>
+        <option value="ok">Sucesso</option>
+        <option value="error">Erro</option>
+      </select>
+    </label>
+    <label>
+      Origem
+      <select (change)="setFilter('origin', $event)">
+        <option value="">Todas</option>
+        <option value="chat">Chat (decisão do modelo)</option>
+        <option value="manual">Painel de ferramentas</option>
+      </select>
+    </label>
+  </section>
+
+  <div class="table-wrap">
+    <table>
+      <caption class="sr-only">Chamadas MCP registradas</caption>
+      <thead>
+        <tr>
+          <th scope="col">Quando</th>
+          <th scope="col">Origem</th>
+          <th scope="col">Ferramenta</th>
+          <th scope="col">Argumentos</th>
+          <th scope="col">Status</th>
+          <th scope="col">Duração</th>
+          <th scope="col">Servidor</th>
+          <th scope="col">Conversa</th>
+          <th scope="col"><span class="sr-only">Detalhe</span></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (item of page()?.items ?? []; track item.id) {
+          <tr [class.selected]="selected()?.call?.id === item.id">
+            <td>{{ item.createdAt | date: 'dd/MM/yyyy HH:mm:ss' }}</td>
+            <td><span class="pill" [class.manual]="item.origin === 'manual'">{{ item.origin === 'chat' ? 'chat' : 'painel' }}</span></td>
+            <td><code>{{ item.toolName }}</code></td>
+            <td class="args">
+              @for (pair of argumentPairs(item.arguments); track pair.key) {
+                <span><span class="key">{{ pair.key }}</span> {{ pair.value }}</span>
+              }
+            </td>
+            <td>
+              @if (item.isError) {
+                <span class="state error">erro</span>
+              } @else {
+                <span class="state ok">ok</span>
+              }
+            </td>
+            <td class="num">{{ formatDuration(item.durationMs) }}</td>
+            <td class="server">{{ item.mcpServer }} · {{ item.mcpTransport }}</td>
+            <td class="conversation">{{ item.conversationTitle ?? '—' }}</td>
+            <td><button type="button" class="link" (click)="select(item)">ver</button></td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="9" class="empty">
+              @if (loading()) {
+                Carregando…
+              } @else {
+                Nenhuma chamada registrada ainda. Faça uma pergunta no <a routerLink="/">chat</a>.
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+
+  @if (page(); as p) {
+    <nav class="pagination" aria-label="Paginação">
+      <button type="button" class="button secondary" (click)="goTo(p.page - 1)" [disabled]="p.page <= 1">Anterior</button>
+      <span>Página {{ p.page }} de {{ totalPages() }} · {{ p.total }} chamadas</span>
+      <button type="button" class="button secondary" (click)="goTo(p.page + 1)" [disabled]="p.page >= totalPages()">Próxima</button>
+    </nav>
+  }
+
+  @if (selected(); as detail) {
+    <section class="detail" aria-labelledby="detail-title">
+      <header>
+        <h2 id="detail-title">Chamada #{{ detail.call.id }} · <code>{{ detail.call.toolName }}</code></h2>
+        <button type="button" class="button secondary" (click)="closeDetail()">Fechar</button>
+      </header>
+      <p class="detail-meta">
+        {{ detail.call.createdAt | date: 'dd/MM/yyyy HH:mm:ss' }} · {{ formatDuration(detail.call.durationMs) }} ·
+        {{ detail.call.mcpServer }} via {{ detail.call.mcpTransport }}
+        @if (detail.call.model) {
+          · modelo {{ detail.call.model }}
+        }
+      </p>
+      <div class="detail-grid">
+        <div>
+          <h3>Argumentos</h3>
+          <app-json-view [value]="detail.call.arguments" label="Argumentos da chamada" />
+        </div>
+        <div>
+          <h3>Resultado entregue ao modelo</h3>
+          <app-json-view [value]="detail.result" label="Resultado da chamada" />
+        </div>
+      </div>
+    </section>
+  }
+</div>

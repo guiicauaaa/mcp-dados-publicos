@@ -1,0 +1,104 @@
+<div class="layout">
+  <aside class="sidebar" aria-labelledby="conversations-title">
+    <button type="button" class="button primary new" (click)="newConversation()" [disabled]="busy()">+ Nova conversa</button>
+    <h2 id="conversations-title" class="sidebar-title">Conversas</h2>
+    <ul class="conversations">
+      @for (c of conversations(); track c.id) {
+        <li [class.active]="c.id === activeId()">
+          <button type="button" class="conversation" (click)="open(c.id)" [disabled]="busy()" [attr.aria-current]="c.id === activeId() ? 'true' : null">
+            <span class="title">{{ c.title }}</span>
+            <span class="meta">{{ c.updatedAt | date: 'dd/MM HH:mm' }} · {{ c.messageCount }} mensagens</span>
+          </button>
+          <button type="button" class="icon" (click)="remove(c)" [disabled]="busy()" [attr.aria-label]="'Apagar a conversa ' + c.title">
+            <span aria-hidden="true">×</span>
+          </button>
+        </li>
+      } @empty {
+        <li class="empty">Nenhuma conversa ainda.</li>
+      }
+    </ul>
+  </aside>
+
+  <section class="chat" aria-label="Chat">
+    <div class="messages" #scroller aria-live="polite" aria-relevant="additions text">
+      @if (messages().length === 0) {
+        <div class="welcome">
+          <h1>Pergunte sobre as emendas Pix dos municípios</h1>
+          <p>
+            O modelo <strong>{{ modelName() }}</strong> roda localmente no Ollama e decide sozinho quando precisa de dados oficiais.
+            Quando precisa, chama o <strong>servidor MCP</strong>, que consulta a API pública do Transferegov. Cada chamada aparece
+            aqui como um cartão, com os argumentos escolhidos pelo modelo e a resposta do servidor.
+          </p>
+          <div class="suggestions">
+            @for (suggestion of suggestions; track suggestion) {
+              <button type="button" class="suggestion" (click)="send(suggestion)" [disabled]="busy()">{{ suggestion }}</button>
+            }
+          </div>
+        </div>
+      }
+
+      @for (m of messages(); track m.key) {
+        @if (m.role === 'user') {
+          <div class="message user">
+            <div class="bubble">{{ m.text }}</div>
+          </div>
+        } @else {
+          <div class="message assistant">
+            <div class="avatar" aria-hidden="true">IA</div>
+            <div class="body">
+              @for (call of m.toolCalls; track call.callId) {
+                <app-tool-call-card [call]="call" [transport]="transport()" />
+              }
+              @if (m.warning) {
+                <p class="notice warning">{{ m.warning }}</p>
+              }
+              @if (m.pending) {
+                <p class="thinking"><span class="pulse" aria-hidden="true"></span> pensando… {{ elapsed() }} s</p>
+              }
+              @if (m.text) {
+                <app-answer-text [text]="m.text" />
+              }
+              @if (m.error) {
+                <p class="notice error" role="alert">{{ m.error }}</p>
+              }
+              @if (m.source) {
+                <p class="source">{{ m.source }}</p>
+              }
+              @if (!m.pending && m.model) {
+                <p class="meta">
+                  {{ m.model }} · {{ formatDuration(m.elapsedMs) }} ·
+                  @if (m.toolCalls.length > 0) {
+                    {{ m.toolCalls.length }} chamada(s) MCP
+                  } @else {
+                    respondeu sem consultar ferramentas
+                  }
+                </p>
+              }
+            </div>
+          </div>
+        }
+      }
+    </div>
+
+    <form class="composer" (submit)="$event.preventDefault(); send()">
+      <label class="sr-only" for="question">Sua pergunta</label>
+      <textarea
+        id="question"
+        #question
+        rows="2"
+        maxlength="2000"
+        [value]="draft()"
+        (input)="onInput($event)"
+        (keydown)="onKeydown($event)"
+        [disabled]="busy()"
+        placeholder="Ex.: Quanto Campinas (SP) recebeu de emendas Pix em 2026?"
+      ></textarea>
+      @if (busy()) {
+        <button type="button" class="button secondary" (click)="stop()">Parar</button>
+      } @else {
+        <button type="submit" class="button primary" [disabled]="!draft().trim()">Enviar</button>
+      }
+    </form>
+    <p class="hint">Enter envia · Shift+Enter quebra a linha · em CPU, respostas com consulta levam de 15 a 45 s.</p>
+  </section>
+</div>
