@@ -52,6 +52,9 @@ var exposed = mcp.Tools.Where(t => settings.EffectiveExposedTools.Contains(t.Nam
 ui.Ok($"MCP conectado via {mcp.Transport}: {mcp.ServerName} {mcp.ServerVersion}, protocolo {mcp.ProtocolVersion}, " +
       $"{mcp.ConnectTime.TotalMilliseconds:0} ms | ferramentas: {string.Join(", ", mcp.Tools.Select(t => t.Name))}");
 
+// --check tests the MCP -> external API path first: it does not depend on Ollama.
+var externalApiOk = options.Mode != ConsoleMode.Check || await CheckExternalApiAsync();
+
 // 2) Ollama: server up, model installed (the derived one is created from llama3.2), warm-up.
 var http = new HttpClient { BaseAddress = settings.OllamaBaseUrl, Timeout = settings.OllamaHttpTimeout };
 var ollama = new OllamaApiClient(http, settings.Model);
@@ -88,7 +91,7 @@ var engine = new ChatEngine(ollama, settings);
 switch (options.Mode)
 {
     case ConsoleMode.Check:
-        return await RunCheckAsync();
+        return externalApiOk ? 0 : 1;
     case ConsoleMode.Smoke:
         return await RunSmokeAsync();
     default:
@@ -96,7 +99,7 @@ switch (options.Mode)
         return 0;
 }
 
-async Task<int> RunCheckAsync()
+async Task<bool> CheckExternalApiAsync()
 {
     ui.Ok($"MCP tools/list com {mcp.Tools.Count} ferramenta(s)");
     // Calls the tool directly, without the model, to prove the network path (MCP -> Transferegov).
@@ -108,11 +111,11 @@ async Task<int> RunCheckAsync()
     if (result.IsError == true)
     {
         ui.Fail($"Transferegov via MCP: {text}");
-        return 1;
+        return false;
     }
 
     ui.Ok($"Transferegov via MCP: {ToolResultShaper.Preview(text, 120)} ({stopwatch.ElapsedMilliseconds} ms)");
-    return 0;
+    return true;
 }
 
 async Task<int> RunSmokeAsync()

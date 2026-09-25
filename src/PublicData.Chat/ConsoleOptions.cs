@@ -19,16 +19,21 @@ public sealed record ConsoleOptions(ConsoleMode Mode, ChatSettings Settings, int
         Uso: dotnet run --project src/PublicData.Chat [-- opções]
 
           (sem opções)          conversa no terminal
-          --check               diagnóstico (Ollama, modelo, MCP, Transferegov) com código de saída 0/1
+          --check               diagnóstico: MCP e Transferegov (sem precisar do Ollama), depois Ollama e modelo
           --smoke               roteiro de perguntas contra o modelo real (critério para gravar o vídeo)
             --passes N            rodadas (padrão 2)
             --only id1,id2        só alguns casos
             --out arquivo.json    grava o resultado em JSON
             --md arquivo.md       grava a tabela em Markdown
           --model NOME          modelo do Ollama (padrão llama3.2-mcp-v1; ex.: llama3.2, qwen3:4b-instruct)
-          --mcp-http URL        usa o servidor MCP por Streamable HTTP (ex.: http://localhost:5100/mcp)
+          --mcp-http URL        usa o servidor MCP por Streamable HTTP em vez de stdio. Suba o servidor antes:
+                                dotnet run --project src/PublicData.McpServer -- --http --urls http://localhost:5100
+                                e use --mcp-http http://localhost:5100/mcp
 
         Variáveis de ambiente: OLLAMA_BASE_URL (padrão http://localhost:11434), OLLAMA_MODEL, MCP_HTTP_URL.
+
+        Códigos de saída: 0 ok · 1 falha no --check (Transferegov via MCP) ou no --smoke · 2 Ollama fora do ar
+                          · 3 modelo não instalado · 4 servidor MCP não iniciou.
         """;
 
     public static ConsoleOptions Parse(string[] args)
