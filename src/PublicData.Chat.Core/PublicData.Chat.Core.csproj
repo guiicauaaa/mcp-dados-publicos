@@ -8,9 +8,12 @@
     <PackageReference Include="ModelContextProtocol.Core" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="OllamaSharp" />
+    <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The same key reader in the server (validates) and in the client (signs), so the format cannot drift. -->
+    <Compile Include="..\Shared\SigningKeyFile.cs" Link="Mcp\SigningKeyFile.cs" />
     <!-- Single source of truth for the derived model template: the same file documented in the README. -->
     <EmbeddedResource Include="..\..\ollama\Modelfile" LogicalName="Modelfile" />
     <InternalsVisibleTo Include="PublicData.Tests" />

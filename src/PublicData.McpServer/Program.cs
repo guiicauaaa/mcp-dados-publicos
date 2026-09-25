@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -7,6 +8,8 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using ModelContextProtocol.AspNetCore;
 using PublicData.McpServer.Hosting;
+using PublicData.McpServer.Security;
+using PublicData.Shared;
 
 namespace PublicData.McpServer;
 
@@ -31,7 +34,12 @@ public static class Program
 
         // The command-line configuration provider would read "--http --urls x" as http="--urls" and lose the URL.
         var hostArgs = args.Where(a => a != "--http").ToArray();
-        await (useHttp ? RunHttpAsync(hostArgs) : RunStdioAsync(hostArgs));
+        if (useHttp)
+        {
+            return await RunHttpAsync(hostArgs);
+        }
+
+        await RunStdioAsync(hostArgs);
         return 0;
     }
 
@@ -87,7 +95,7 @@ public static class Program
         await builder.Build().RunAsync();
     }
 
-    private static async Task RunHttpAsync(string[] args)
+    private static async Task<int> RunHttpAsync(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
         builder.Logging.AddSimpleConsole(o =>
@@ -97,6 +105,38 @@ public static class Program
             o.TimestampFormat = "HH:mm:ss ";
         });
         ConfigureLogLevels(builder.Logging);
+        // Rejected tokens (the reason and the "challenged" line) are Information; accepted ones are Debug.
+        builder.Logging.AddFilter("Microsoft.AspNetCore.Authentication", LogLevel.Information);
+
+        // Fail closed: over HTTP, /mcp requires a JWT signed with the key shared with the API. Without a key the
+        // server does not start, unless anonymous access was asked for explicitly (local development).
+        var auth = builder.Configuration.GetSection(McpAuthOptions.SectionName).Get<McpAuthOptions>() ?? new McpAuthOptions();
+        if (!auth.AllowAnonymous)
+        {
+            byte[] key;
+            try
+            {
+                key = SigningKeyFile.Read(auth.SigningKeyFile is { Length: > 0 } path
+                    ? path
+                    : throw new InvalidOperationException(
+                        "O modo HTTP exige Mcp:Auth:SigningKeyFile (chave compartilhada com a API). " +
+                        "Só para desenvolvimento local: --Mcp:Auth:AllowAnonymous true."));
+            }
+            catch (InvalidOperationException ex)
+            {
+                await Console.Error.WriteLineAsync($"Servidor MCP não iniciado: {ex.Message}");
+                return 1;
+            }
+
+            builder.Services
+                .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+                .AddJwtBearer(o =>
+                {
+                    o.MapInboundClaims = false;
+                    o.TokenValidationParameters = McpAuthOptions.CreateValidationParameters(auth, key);
+                });
+            builder.Services.AddAuthorization();
+        }
 
         builder.Services.AddPublicDataServices();
         builder.Services
@@ -123,9 +163,22 @@ public static class Program
             await next(context);
         });
 
-        app.MapMcp("/mcp");
+        var mcp = app.MapMcp("/mcp");
+        if (auth.AllowAnonymous)
+        {
+            app.Logger.LogWarning("Mcp:Auth:AllowAnonymous ligado: /mcp aceita requisições sem token. Use só em desenvolvimento local.");
+        }
+        else
+        {
+            app.UseAuthentication();
+            app.UseAuthorization();
+            mcp.RequireAuthorization();
+        }
+
+        // Stays anonymous: Docker HEALTHCHECK and the wait loops only need to know the process is up.
         app.MapGet("/health", () => Results.Ok(new { status = "ok", server = McpServerSetup.Name, version = McpServerSetup.Version }));
         await app.RunAsync();
+        return 0;
     }
 
     private static void ConfigureLogLevels(ILoggingBuilder logging)

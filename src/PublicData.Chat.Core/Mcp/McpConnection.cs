@@ -34,6 +34,9 @@ public sealed class McpConnection : IAsyncDisposable
 
     public string Endpoint { get; }
 
+    /// <inheritdoc cref="McpSettings.Authentication"/>
+    public string Authentication { get; private init; } = "none";
+
     public TimeSpan ConnectTime { get; }
 
     public string ServerName => Client.ServerInfo.Name;
@@ -55,12 +58,32 @@ public sealed class McpConnection : IAsyncDisposable
         {
             var url = settings.HttpUrl ?? throw new McpStartupException("Mcp:Transport=http exige Mcp:HttpUrl (ex.: http://localhost:5100/mcp).");
             endpoint = url.ToString();
-            transport = new HttpClientTransport(new HttpClientTransportOptions
+            var options = new HttpClientTransportOptions
             {
                 Name = "public-data-mcp",
                 Endpoint = url,
                 TransportMode = HttpTransportMode.StreamableHttp,
-            }, loggerFactory);
+            };
+
+            if (settings.Auth.Enabled)
+            {
+                McpTokenIssuer issuer;
+                try
+                {
+                    issuer = McpTokenIssuer.FromKeyFile(settings.Auth);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    throw new McpStartupException($"O servidor MCP não iniciou ({endpoint}): {ex.Message}", ex);
+                }
+
+                // A handler, not AdditionalHeaders: a fixed header would keep sending the first token after it expires.
+                transport = new HttpClientTransport(options, new HttpClient(new BearerTokenHandler(issuer)), loggerFactory, ownsHttpClient: true);
+            }
+            else
+            {
+                transport = new HttpClientTransport(options, loggerFactory);
+            }
         }
         else
         {
@@ -98,7 +121,10 @@ public sealed class McpConnection : IAsyncDisposable
             }, loggerFactory, cancellationToken);
 
             var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
-            return new McpConnection(client, [.. tools], settings.UseHttp ? "http" : "stdio", endpoint, stopwatch.Elapsed);
+            return new McpConnection(client, [.. tools], settings.UseHttp ? "http" : "stdio", endpoint, stopwatch.Elapsed)
+            {
+                Authentication = settings.Authentication,
+            };
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
@@ -108,8 +134,24 @@ public sealed class McpConnection : IAsyncDisposable
                 await client.DisposeAsync();
             }
 
-            throw new McpStartupException($"O servidor MCP não iniciou ({endpoint}): {ex.Message}", ex);
+            var hint = IsUnauthorized(ex)
+                ? " O servidor exige JWT: configure Chat:Mcp:Auth:SigningKeyFile (no console, --mcp-key) com a mesma chave dele."
+                : "";
+            throw new McpStartupException($"O servidor MCP não iniciou ({endpoint}): {ex.Message}{hint}", ex);
         }
+    }
+
+    private static bool IsUnauthorized(Exception? ex)
+    {
+        for (; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.Unauthorized })
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>Liveness probe: tools/list (the 2026-07-28 protocol has no ping).</summary>

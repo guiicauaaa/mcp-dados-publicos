@@ -31,7 +31,7 @@ public sealed class McpGateway(ChatSettings settings, ILoggerFactory loggerFacto
     private readonly LinkedList<ServerLogLine> _log = new();
     private long _sequence;
     private McpConnection? _connection;
-    private volatile McpStatus _status = new(ComponentState.Starting, settings.Mcp.Transport, null, null, null, null, [], "Conectando ao servidor MCP…");
+    private volatile McpStatus _status = new(ComponentState.Starting, settings.Mcp.Transport, settings.Mcp.Authentication, null, null, null, null, [], "Conectando ao servidor MCP…");
 
     public McpStatus Status => _status;
 
@@ -137,7 +137,7 @@ public sealed class McpGateway(ChatSettings settings, ILoggerFactory loggerFacto
             var connection = await McpConnection.ConnectAsync(settings.Mcp, AppendLog, loggerFactory, cancellationToken);
             _connection = connection;
             var offered = settings.EffectiveExposedTools;
-            _status = new McpStatus(ComponentState.Ready, connection.Transport, connection.Endpoint, connection.ServerName,
+            _status = new McpStatus(ComponentState.Ready, connection.Transport, connection.Authentication, connection.Endpoint, connection.ServerName,
                 connection.ServerVersion, connection.ProtocolVersion,
                 [.. connection.Tools.Select(t => new McpToolInfo(t.Name, t.Title, t.Description, t.JsonSchema, offered.Contains(t.Name)))],
                 null);

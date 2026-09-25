@@ -29,6 +29,8 @@ export interface JsonSchema {
 export interface McpStatus {
   state: ComponentState;
   transport: string;
+  /** 'jwt' when the API signs a token for every request to the MCP server (HTTP in Docker Compose). */
+  authentication: 'jwt' | 'none';
   endpoint: string | null;
   serverName: string | null;
   serverVersion: string | null;

@@ -19,6 +19,7 @@ COPY src/PublicData.McpServer/PublicData.McpServer.csproj src/PublicData.McpServ
 COPY src/PublicData.Chat.Core/PublicData.Chat.Core.csproj src/PublicData.Chat.Core/
 COPY src/PublicData.Api/PublicData.Api.csproj src/PublicData.Api/
 RUN dotnet restore src/PublicData.Api/PublicData.Api.csproj
+COPY src/Shared/ src/Shared/
 COPY src/PublicData.McpServer/ src/PublicData.McpServer/
 COPY src/PublicData.Chat.Core/ src/PublicData.Chat.Core/
 COPY src/PublicData.Api/ src/PublicData.Api/

@@ -27,10 +27,12 @@ public sealed record ConsoleOptions(ConsoleMode Mode, ChatSettings Settings, int
             --md arquivo.md       grava a tabela em Markdown
           --model NOME          modelo do Ollama (padrão llama3.2-mcp-v1; ex.: llama3.2, qwen3:4b-instruct)
           --mcp-http URL        usa o servidor MCP por Streamable HTTP em vez de stdio. Suba o servidor antes:
-                                dotnet run --project src/PublicData.McpServer -- --http --urls http://localhost:5100
-                                e use --mcp-http http://localhost:5100/mcp
+                                dotnet run --project src/PublicData.McpServer -- --http --urls http://localhost:5100 --Mcp:Auth:SigningKeyFile mcp.key
+                                e use --mcp-http http://localhost:5100/mcp --mcp-key mcp.key
+            --mcp-key ARQUIVO     chave do JWT (base64, 256 bits ou mais), a mesma do servidor. Sem chave, o
+                                  servidor só aceita com --Mcp:Auth:AllowAnonymous true (desenvolvimento local).
 
-        Variáveis de ambiente: OLLAMA_BASE_URL (padrão http://localhost:11434), OLLAMA_MODEL, MCP_HTTP_URL.
+        Variáveis de ambiente: OLLAMA_BASE_URL (padrão http://localhost:11434), OLLAMA_MODEL, MCP_HTTP_URL, MCP_JWT_KEY_FILE.
 
         Códigos de saída: 0 ok · 1 falha no --check (Transferegov via MCP) ou no --smoke · 2 Ollama fora do ar
                           · 3 modelo não instalado · 4 servidor MCP não iniciou.
@@ -56,6 +58,7 @@ public sealed record ConsoleOptions(ConsoleMode Mode, ChatSettings Settings, int
         {
             settings.Mcp.Transport = "http";
             settings.Mcp.HttpUrl = new Uri(mcpUrl);
+            settings.Mcp.Auth.SigningKeyFile = Value("--mcp-key") ?? Environment.GetEnvironmentVariable("MCP_JWT_KEY_FILE");
         }
 
         var mode = args.Contains("--check") ? ConsoleMode.Check

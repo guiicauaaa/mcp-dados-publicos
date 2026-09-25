@@ -18,9 +18,11 @@ public sealed record ModelStatus(
 
 public sealed record McpToolInfo(string Name, string? Title, string? Description, object InputSchema, bool OfferedToModel);
 
+/// <param name="Authentication">"jwt" when the API signs a token for every request to the MCP server; "none" otherwise.</param>
 public sealed record McpStatus(
     string State,
     string Transport,
+    string Authentication,
     string? Endpoint,
     string? ServerName,
     string? ServerVersion,

@@ -22,13 +22,36 @@ services:
       timeout: 5s
       retries: 12
 
+  # Na primeira subida, gera a chave (384 bits aleatórios) com que a API assina e o servidor MCP valida os JWT.
+  # Fica num volume montado em /run/secrets, o caminho de um Docker secret: nenhuma chave vai para o repositório
+  # e o "docker compose up" continua sendo um comando só. Nas subidas seguintes, a mesma chave é reaproveitada.
+  mcp-key:
+    image: alpine:3.24
+    network_mode: none
+    volumes:
+      - mcp-key:/keys
+    # 1654 é o usuário "app" das imagens .NET, que rodam sem root.
+    command:
+      - sh
+      - -c
+      - >-
+        test -s /keys/mcp_jwt_key || (umask 077 && head -c 48 /dev/urandom | base64 > /keys/mcp_jwt_key);
+        chown 1654:1654 /keys/mcp_jwt_key && chmod 400 /keys/mcp_jwt_key
+
   mcp-server:
     build:
       context: .
       dockerfile: src/PublicData.McpServer/Dockerfile
     image: ${IMAGE_REGISTRY:-ghcr.io/guiicauaaa/mcp-dados-publicos}/mcp-server:${IMAGE_TAG:-latest}
     restart: unless-stopped
-    # Sem porta publicada: só a API conversa com ele, pela rede interna do Compose.
+    # Sem porta publicada: só a API conversa com ele, pela rede interna do Compose, e com JWT.
+    environment:
+      Mcp__Auth__SigningKeyFile: /run/secrets/mcp_jwt_key
+    volumes:
+      - mcp-key:/run/secrets:ro
+    depends_on:
+      mcp-key:
+        condition: service_completed_successfully
 
   app:
     build:
@@ -44,14 +67,20 @@ services:
       Chat__OllamaBaseUrl: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       Chat__Mcp__Transport: http
       Chat__Mcp__HttpUrl: http://mcp-server:8080/mcp
+      Chat__Mcp__Auth__SigningKeyFile: /run/secrets/mcp_jwt_key
+    volumes:
+      - mcp-key:/run/secrets:ro
     extra_hosts:
       # Docker Desktop já resolve host.docker.internal; esta linha faz o mesmo no Linux.
       - "host.docker.internal:host-gateway"
     depends_on:
       db:
         condition: service_healthy
+      mcp-key:
+        condition: service_completed_successfully
       mcp-server:
         condition: service_healthy
 
 volumes:
   pgdata:
+  mcp-key:

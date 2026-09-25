@@ -29,6 +29,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.17.10" />
   </ItemGroup>
+  <ItemGroup Label="JWT entre a API e o servidor MCP">
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
+    <!-- Explicit: JwtBearer 10.0.12 depends on 8.19.2; pinning 8.23.0 keeps the whole IdentityModel family on one version. -->
+    <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
+  </ItemGroup>
   <ItemGroup Label="Testes">
     <PackageVersion Include="xunit.v3" Version="4.0.1" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />

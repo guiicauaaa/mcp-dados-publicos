@@ -6,6 +6,7 @@ WORKDIR /src
 COPY global.json Directory.Build.props Directory.Packages.props ./
 COPY src/PublicData.McpServer/PublicData.McpServer.csproj src/PublicData.McpServer/
 RUN dotnet restore src/PublicData.McpServer/PublicData.McpServer.csproj
+COPY src/Shared/ src/Shared/
 COPY src/PublicData.McpServer/ src/PublicData.McpServer/
 RUN dotnet publish src/PublicData.McpServer/PublicData.McpServer.csproj -c Release -o /app --no-restore
 

@@ -18,6 +18,7 @@ const status: SystemStatus = {
   mcp: {
     state: 'ready',
     transport: 'stdio',
+    authentication: 'none',
     endpoint: 'mcp-server/PublicData.McpServer.dll',
     serverName: 'public-data-mcp',
     serverVersion: '1.0.0',

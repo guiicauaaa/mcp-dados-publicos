@@ -60,5 +60,29 @@ public sealed class McpSettings
     /// <summary>Overrides the server DLL path for stdio. Default: mcp-server/PublicData.McpServer.dll next to the host.</summary>
     public string? ServerDll { get; set; }
 
+    /// <summary>JWT sent to the server over HTTP. Not used over stdio.</summary>
+    public McpAuthSettings Auth { get; set; } = new();
+
     public bool UseHttp => string.Equals(Transport, "http", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>"jwt" when every HTTP request carries a signed token; "none" over stdio or without a key.</summary>
+    public string Authentication => UseHttp && Auth.Enabled ? "jwt" : "none";
+}
+
+public sealed class McpAuthSettings
+{
+    public const string DefaultIssuer = "public-data-api";
+    public const string DefaultAudience = "public-data-mcp";
+
+    /// <summary>The base64 key shared with the server (a Docker secret in Compose). Without it, requests carry no token.</summary>
+    public string? SigningKeyFile { get; set; }
+
+    public string Issuer { get; set; } = DefaultIssuer;
+
+    public string Audience { get; set; } = DefaultAudience;
+
+    /// <summary>Short-lived: a leaked token is worth little, and a new one is signed before this one runs out.</summary>
+    public TimeSpan TokenLifetime { get; set; } = TimeSpan.FromMinutes(5);
+
+    public bool Enabled => !string.IsNullOrWhiteSpace(SigningKeyFile);
 }
