@@ -52,12 +52,14 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          # Labels (revision) a partir do commit compilado, não do github.sha do evento workflow_run.
-          context: git
           images: ghcr.io/${{ github.repository }}/${{ matrix.image }}
           tags: |
             type=raw,value=latest
             type=raw,value=${{ github.event.workflow_run.head_sha || github.sha }}
+          # O label de revisão aponta para o commit compilado (head_sha), não para o github.sha do evento
+          # workflow_run. (context: git não serve aqui: o checkout de um SHA deixa o HEAD destacado.)
+          labels: |
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha || github.sha }}
 
       - uses: docker/build-push-action@v7
         with:
