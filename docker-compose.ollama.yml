@@ -1,0 +1,34 @@
+# Opcional: Ollama também em container (sem GPU, inferência em CPU). Baixa o llama3.2 (~2 GB) na primeira vez.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build
+
+services:
+  ollama:
+    image: ollama/ollama:0.34.4
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  ollama-pull:
+    image: ollama/ollama:0.34.4
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "llama3.2"]
+    restart: "no"
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  app:
+    environment:
+      Chat__OllamaBaseUrl: http://ollama:11434
+    depends_on:
+      ollama-pull:
+        condition: service_completed_successfully
+
+volumes:
+  ollama:

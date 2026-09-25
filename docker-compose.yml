@@ -1,0 +1,54 @@
+# Assistente de Dados Públicos: PostgreSQL + servidor MCP (Streamable HTTP) + API com o frontend Angular.
+#
+#   docker compose up -d --build        ->  http://localhost:8080
+#
+# O modelo roda no Ollama instalado na máquina (host.docker.internal:11434), sem baixar outra cópia de 2 GB.
+# Para rodar o Ollama também em container:  docker compose -f docker-compose.yml -f docker-compose.ollama.yml up -d --build
+
+name: dados-publicos
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: dados_publicos
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d dados_publicos"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: src/PublicData.McpServer/Dockerfile
+    image: ${IMAGE_REGISTRY:-ghcr.io/guiicauaaa/mcp-dados-publicos}/mcp-server:${IMAGE_TAG:-latest}
+    # Sem porta publicada: só a API conversa com ele, pela rede interna do Compose.
+
+  app:
+    build:
+      context: .
+      dockerfile: src/PublicData.Api/Dockerfile
+    image: ${IMAGE_REGISTRY:-ghcr.io/guiicauaaa/mcp-dados-publicos}/app:${IMAGE_TAG:-latest}
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    environment:
+      ConnectionStrings__Default: Host=db;Database=dados_publicos;Username=postgres;Password=${POSTGRES_PASSWORD:-postgres}
+      Chat__OllamaBaseUrl: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      Chat__Mcp__Transport: http
+      Chat__Mcp__HttpUrl: http://mcp-server:8080/mcp
+    extra_hosts:
+      # Docker Desktop já resolve host.docker.internal; esta linha faz o mesmo no Linux.
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+      mcp-server:
+        condition: service_healthy
+
+volumes:
+  pgdata:

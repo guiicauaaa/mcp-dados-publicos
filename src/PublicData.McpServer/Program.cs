@@ -19,14 +19,36 @@ namespace PublicData.McpServer;
 /// </summary>
 public static class Program
 {
-    public static Task Main(string[] args)
+    public static async Task<int> Main(string[] args)
     {
+        if (args.Contains("--healthcheck"))
+        {
+            return await HealthProbeAsync();
+        }
+
         var useHttp = args.Contains("--http")
             || string.Equals(Environment.GetEnvironmentVariable("MCP_TRANSPORT"), "http", StringComparison.OrdinalIgnoreCase);
 
         // The command-line configuration provider would read "--http --urls x" as http="--urls" and lose the URL.
         var hostArgs = args.Where(a => a != "--http").ToArray();
-        return useHttp ? RunHttpAsync(hostArgs) : RunStdioAsync(hostArgs);
+        await (useHttp ? RunHttpAsync(hostArgs) : RunStdioAsync(hostArgs));
+        return 0;
+    }
+
+    /// <summary>Docker HEALTHCHECK without curl (the .NET runtime images do not ship it).</summary>
+    private static async Task<int> HealthProbeAsync()
+    {
+        var port = Environment.GetEnvironmentVariable("ASPNETCORE_HTTP_PORTS")?.Split(';', ',')[0] ?? "8080";
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) };
+        try
+        {
+            using var response = await http.GetAsync($"http://127.0.0.1:{port}/health");
+            return response.IsSuccessStatusCode ? 0 : 1;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return 1;
+        }
     }
 
     private static async Task RunStdioAsync(string[] args)

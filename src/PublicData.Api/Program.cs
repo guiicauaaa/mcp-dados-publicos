@@ -6,6 +6,12 @@ using PublicData.Api.Services;
 using PublicData.Chat.Core;
 using Scalar.AspNetCore;
 
+if (args.Contains("--healthcheck"))
+{
+    // Docker HEALTHCHECK without curl (the .NET runtime images do not ship it).
+    return await HealthProbe.RunAsync();
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<ChatSettings>(builder.Configuration.GetSection(ChatSettings.SectionName));
@@ -55,6 +61,7 @@ app.MapAuditEndpoints();
 app.MapFallbackToFile("index.html");
 
 await app.RunAsync();
+return 0;
 
 // In Docker Compose PostgreSQL may still be starting: retry for a short while before giving up.
 static async Task MigrateAsync(WebApplication app)
