@@ -1,5 +1,5 @@
 import { DatePipe, DecimalPipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { afterNextRender, Component, computed, inject, Injector, signal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { AuditDetail, AuditFilter, AuditItem, AuditSummary, PagedResult } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
@@ -20,12 +20,14 @@ import { JsonView } from '../../shared/json-view';
 export class AuditPage {
   private readonly api = inject(ApiService);
   private readonly status = inject(StatusStore);
+  private readonly injector = inject(Injector);
 
   protected readonly summary = signal<AuditSummary | null>(null);
   protected readonly page = signal<PagedResult<AuditItem> | null>(null);
   protected readonly filter = signal<AuditFilter>({ page: 1, pageSize: 15 });
   protected readonly selected = signal<AuditDetail | null>(null);
   protected readonly loading = signal(false);
+  protected readonly failed = signal(false);
 
   protected readonly toolNames = computed(() => this.status.tools().map((t) => t.name));
   protected readonly totalPages = computed(() => {
@@ -45,13 +47,17 @@ export class AuditPage {
 
   protected reload(): void {
     this.loading.set(true);
-    this.api.auditSummary().subscribe((summary) => this.summary.set(summary));
+    this.failed.set(false);
+    this.api.auditSummary().subscribe({ next: (summary) => this.summary.set(summary), error: () => this.summary.set(null) });
     this.api.auditCalls(this.filter()).subscribe({
       next: (page) => {
         this.page.set(page);
         this.loading.set(false);
       },
-      error: () => this.loading.set(false),
+      error: () => {
+        this.loading.set(false);
+        this.failed.set(true);
+      },
     });
   }
 
@@ -67,7 +73,18 @@ export class AuditPage {
   }
 
   protected select(item: AuditItem): void {
-    this.api.auditDetail(item.id).subscribe((detail) => this.selected.set(detail));
+    this.api.auditDetail(item.id).subscribe((detail) => {
+      this.selected.set(detail);
+      // The detail is rendered below the table: bring it (and the keyboard focus) into view.
+      afterNextRender(
+        () => {
+          const heading = document.getElementById('detail-title');
+          heading?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          heading?.focus({ preventScroll: true });
+        },
+        { injector: this.injector },
+      );
+    });
   }
 
   protected closeDetail(): void {

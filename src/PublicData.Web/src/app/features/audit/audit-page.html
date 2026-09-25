@@ -103,6 +103,8 @@
             <td colspan="9" class="empty">
               @if (loading()) {
                 Carregando…
+              } @else if (failed()) {
+                Não consegui carregar a auditoria. Confira se a API e o PostgreSQL estão no ar e clique em Atualizar.
               } @else {
                 Nenhuma chamada registrada ainda. Faça uma pergunta no <a routerLink="/">chat</a>.
               }
@@ -124,7 +126,7 @@
   @if (selected(); as detail) {
     <section class="detail" aria-labelledby="detail-title">
       <header>
-        <h2 id="detail-title">Chamada #{{ detail.call.id }} · <code>{{ detail.call.toolName }}</code></h2>
+        <h2 id="detail-title" tabindex="-1">Chamada #{{ detail.call.id }} · <code>{{ detail.call.toolName }}</code></h2>
         <button type="button" class="button secondary" (click)="closeDetail()">Fechar</button>
       </header>
       <p class="detail-meta">

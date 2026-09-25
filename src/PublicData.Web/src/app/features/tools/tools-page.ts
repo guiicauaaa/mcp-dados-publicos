@@ -101,12 +101,17 @@ export class ToolsPage {
   }
 
   private pollLog(): void {
-    this.api.serverLog(this.lastSequence).subscribe((lines) => {
-      if (lines.length === 0) {
-        return;
-      }
-      this.lastSequence = lines[lines.length - 1].sequence;
-      this.log.update((current) => [...current, ...lines].slice(-maxLogLines));
+    this.api.serverLog(this.lastSequence).subscribe({
+      next: (lines) => {
+        if (lines.length === 0) {
+          return;
+        }
+        this.lastSequence = lines[lines.length - 1].sequence;
+        this.log.update((current) => [...current, ...lines].slice(-maxLogLines));
+      },
+      error: () => {
+        // API briefly unavailable: the next poll (2 s) tries again.
+      },
     });
   }
 }

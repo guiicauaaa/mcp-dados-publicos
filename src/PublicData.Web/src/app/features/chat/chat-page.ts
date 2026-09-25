@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, DestroyRef, effect, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, signal, viewChild } from '@angular/core';
 import { ConversationDto, ConversationSummary, ChatStreamEvent } from '../../core/api.models';
 import { ApiService } from '../../core/api.service';
 import { ChatStreamService } from '../../core/chat-stream.service';
@@ -10,6 +10,9 @@ import { UiMessage, UiToolCall } from './chat.models';
 import { ToolCallCard } from './tool-call-card';
 
 let localKey = 0;
+
+const nextFrame = (callback: () => void) =>
+  typeof requestAnimationFrame === 'function' ? requestAnimationFrame(callback) : setTimeout(callback);
 
 @Component({
   selector: 'app-chat-page',
@@ -44,14 +47,15 @@ export class ChatPage {
 
   constructor() {
     this.loadConversations();
-    inject(DestroyRef).onDestroy(() => this.abort?.abort());
+    // Leaving the page does NOT abort the turn: the server finishes it and saves the answer and the audit rows,
+    // which show up when the conversation is opened again. Only "Parar" cancels.
 
     // Keep the newest message in view as the stream grows.
     effect(() => {
       this.messages();
       const element = this.scroller()?.nativeElement;
       if (element) {
-        requestAnimationFrame(() => element.scrollTo({ top: element.scrollHeight }));
+        nextFrame(() => element.scrollTo?.({ top: element.scrollHeight }));
       }
     });
   }
@@ -65,7 +69,21 @@ export class ChatPage {
       return;
     }
     this.activeId.set(id);
-    this.api.conversation(id).subscribe((conversation) => this.messages.set(toUiMessages(conversation)));
+    this.api.conversation(id).subscribe({
+      // Two quick clicks: only the conversation that is still active may fill the screen.
+      next: (conversation) => {
+        if (this.activeId() === id) {
+          this.messages.set(toUiMessages(conversation));
+        }
+      },
+      error: () => {
+        if (this.activeId() === id) {
+          this.activeId.set(null);
+          this.messages.set([]);
+          this.loadConversations();
+        }
+      },
+    });
   }
 
   protected newConversation(): void {
@@ -135,11 +153,13 @@ export class ChatPage {
       }));
     } finally {
       clearInterval(timer);
-      this.updateMessage(pendingKey, (m) => (m.pending ? { ...m, pending: false, error: m.error ?? 'A resposta terminou sem conteúdo.' } : m));
+      this.updateMessage(pendingKey, (m) =>
+        closeRunningCalls(m.pending ? { ...m, pending: false, error: m.error ?? 'A resposta terminou sem conteúdo.' } : m),
+      );
       this.busy.set(false);
       this.abort = null;
       this.loadConversations();
-      requestAnimationFrame(() => this.questionInput()?.nativeElement.focus());
+      nextFrame(() => this.questionInput()?.nativeElement.focus());
     }
   }
 
@@ -182,7 +202,7 @@ export class ChatPage {
         this.updateMessage(key, (m) => ({ ...m, warning: event.data.message }));
         break;
       case 'error':
-        this.updateMessage(key, (m) => ({ ...m, pending: false, error: event.data.message }));
+        this.updateMessage(key, (m) => closeRunningCalls({ ...m, pending: false, error: event.data.message }));
         break;
       case 'done':
         break;
@@ -192,6 +212,18 @@ export class ChatPage {
   private updateMessage(key: string, change: (message: UiMessage) => UiMessage): void {
     this.messages.update((list) => list.map((m) => (m.key === key ? change(m) : m)));
   }
+}
+
+/** A card must never keep spinning after the turn ended (cancelled, network error, timeout). */
+export function closeRunningCalls(message: UiMessage): UiMessage {
+  return message.toolCalls.some((c) => c.status === 'running')
+    ? {
+        ...message,
+        toolCalls: message.toolCalls.map((c) =>
+          c.status === 'running' ? { ...c, status: 'error', result: { error: 'Chamada interrompida antes do resultado.' } } : c,
+        ),
+      }
+    : message;
 }
 
 function newMessage(key: string, role: UiMessage['role'], text: string): UiMessage {

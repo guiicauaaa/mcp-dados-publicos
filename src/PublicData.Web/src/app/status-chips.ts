@@ -71,26 +71,32 @@ export class StatusChips {
   protected readonly chips = computed<Chip[]>(() => {
     const status = this.store.current();
     if (this.store.apiUnreachable() || !status) {
-      return [{ label: 'API', value: status ? 'fora do ar' : 'conectando…', state: 'down', detail: 'Não consegui falar com a API.' }];
+      const down = this.store.apiUnreachable();
+      return [{ label: 'API', value: down ? 'fora do ar' : 'conectando…', state: down ? 'down' : 'starting', detail: 'Não consegui falar com a API.' }];
     }
 
     const { ollama, mcp, database } = status;
+    // When a component is not ready, its state is written out too (not only the dot color).
+    const suffix = (state: ComponentState) => (state === 'ready' ? '' : ` · ${this.stateText(state)}`);
     return [
       {
         label: 'Modelo',
-        value: ollama.effectiveModel ?? ollama.requestedModel,
+        value: (ollama.effectiveModel ?? ollama.requestedModel) + suffix(ollama.state),
         state: ollama.state,
         detail: ollama.message ?? `Ollama ${ollama.ollamaVersion ?? ''} em ${ollama.baseUrl}`,
       },
       {
         label: 'MCP',
-        value: mcp.state === 'ready' ? `${mcp.transport} · ${mcp.protocolVersion}` : mcp.transport,
+        value:
+          mcp.state === 'ready'
+            ? `${mcp.serverName} · ${mcp.transport} · ${mcp.protocolVersion}`
+            : `${mcp.transport}${suffix(mcp.state)}`,
         state: mcp.state,
         detail: mcp.message ?? `${mcp.serverName} ${mcp.serverVersion} · ${mcp.tools.length} ferramentas`,
       },
       {
         label: 'Banco',
-        value: 'PostgreSQL',
+        value: 'PostgreSQL' + suffix(database.state),
         state: database.state,
         detail: database.message ?? 'Histórico e auditoria',
       },

@@ -53,7 +53,7 @@
                 <p class="notice warning">{{ m.warning }}</p>
               }
               @if (m.pending) {
-                <p class="thinking"><span class="pulse" aria-hidden="true"></span> pensando… {{ elapsed() }} s</p>
+                <p class="thinking"><span class="pulse" aria-hidden="true"></span> pensando… <span aria-hidden="true">{{ elapsed() }} s</span></p>
               }
               @if (m.text) {
                 <app-answer-text [text]="m.text" />
@@ -99,6 +99,6 @@
         <button type="submit" class="button primary" [disabled]="!draft().trim()">Enviar</button>
       }
     </form>
-    <p class="hint">Enter envia · Shift+Enter quebra a linha · em CPU, respostas com consulta levam de 15 a 45 s.</p>
+    <p class="hint">Enter envia · Shift+Enter quebra a linha · em CPU, respostas com consulta levam cerca de 15 a 30 s.</p>
   </section>
 </div>
