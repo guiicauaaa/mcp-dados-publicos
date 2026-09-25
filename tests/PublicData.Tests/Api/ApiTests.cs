@@ -86,6 +86,40 @@ public sealed class ApiTests(ApiFactory api) : IClassFixture<ApiFactory>
     }
 
     [Fact]
+    public async Task Mcp_calls_are_audited_even_when_the_model_fails_before_answering()
+    {
+        Assert.SkipWhen(ApiFactory.SkipReason is not null, ApiFactory.SkipReason ?? "");
+        api.Model.Script = new ScriptedChatClient(
+            (_, _) => ScriptedChatClient.Call("get_city_amendments", new() { ["city"] = "Campinas", ["state"] = "XX" }),
+            (_, _) => throw new HttpRequestException("Connection refused"));
+
+        var events = await ChatAsync("Quanto Campinas recebeu?");
+
+        Assert.Equal(["conversation", "tool_call", "tool_result", "error", "done"], events.Select(e => e.Type));
+        Assert.Contains("Perdi a conexão com o Ollama", events[3].Data.GetProperty("message").GetString());
+        Assert.Contains(api.Model.Failures, f => f.Contains("Connection refused", StringComparison.Ordinal));
+
+        var conversationId = events[0].Data.GetProperty("conversationId").GetGuid();
+        await using var scope = api.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var messages = await db.Messages.Where(m => m.ConversationId == conversationId).OrderBy(m => m.Id).ToListAsync(Ct);
+        Assert.Equal([MessageRoles.User, MessageRoles.Assistant], messages.Select(m => m.Role));
+        var audit = await db.ToolCalls.SingleAsync(t => t.ConversationId == conversationId, Ct);
+        Assert.Equal(messages[1].Id, audit.MessageId);
+        Assert.True(audit.IsError);
+    }
+
+    [Fact]
+    public async Task Unknown_api_route_is_404_not_the_angular_page()
+    {
+        Assert.SkipWhen(ApiFactory.SkipReason is not null, ApiFactory.SkipReason ?? "");
+
+        using var response = await Client.GetAsync("/api/nao-existe", Ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+    }
+
+    [Fact]
     public async Task Follow_up_sends_only_the_text_of_previous_turns_as_history()
     {
         Assert.SkipWhen(ApiFactory.SkipReason is not null, ApiFactory.SkipReason ?? "");

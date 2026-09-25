@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.AI;
@@ -57,8 +58,15 @@ public sealed class ChatService(
         await db.SaveChangesAsync(cancellationToken);
         emit(ChatStreamEvent.Conversation, new ConversationEvent(conversation.Id, conversation.Title));
 
+        // Kept here too, so the MCP calls that already happened are audited even if the turn never ends.
+        var traced = new List<ToolTraceEvent>();
         void OnToolEvent(ToolTraceEvent e)
         {
+            lock (traced)
+            {
+                traced.Add(e);
+            }
+
             if (e.Kind == ToolTraceKind.Call)
             {
                 emit(ChatStreamEvent.ToolCall, new ToolCallEvent(e.CallId, e.ToolName, ParseJson(e.ArgumentsJson) ?? default, e.Timestamp));
@@ -70,6 +78,10 @@ public sealed class ChatService(
             }
         }
 
+        var server = connection is null ? "-" : $"{connection.ServerName} {connection.ServerVersion}";
+        var transport = connection?.Transport ?? "-";
+        var stopwatch = Stopwatch.StartNew();
+
         TurnResult result;
         try
         {
@@ -78,13 +90,24 @@ public sealed class ChatService(
         catch (HttpRequestException ex)
         {
             logger.LogWarning("Falha ao falar com o Ollama: {Message}", ex.Message);
-            emit(ChatStreamEvent.Error, new MessageEvent($"Perdi a conexão com o Ollama em {settings.OllamaBaseUrl}. Verifique se ele está aberto e tente de novo."));
+            model.ReportFailure(ex.Message);
+            var message = $"Perdi a conexão com o Ollama em {settings.OllamaBaseUrl}. Verifique se ele está aberto e tente de novo.";
+            await SaveInterruptedTurnAsync(conversation, message, Snapshot(traced), modelName, server, transport, stopwatch.Elapsed);
+            emit(ChatStreamEvent.Error, new MessageEvent(message));
             return;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            emit(ChatStreamEvent.Error, new MessageEvent($"A resposta passou de {settings.TurnTimeout.TotalMinutes:0} minutos. Tente de novo (o modelo pode estar carregando)."));
+            var message = $"A resposta passou de {settings.TurnTimeout.TotalMinutes:0} minutos. Tente de novo (o modelo pode estar carregando).";
+            await SaveInterruptedTurnAsync(conversation, message, Snapshot(traced), modelName, server, transport, stopwatch.Elapsed);
+            emit(ChatStreamEvent.Error, new MessageEvent(message));
             return;
+        }
+        catch (OperationCanceledException)
+        {
+            // The user pressed "Parar" or closed the page: what already happened (MCP calls included) stays recorded.
+            await SaveInterruptedTurnAsync(conversation, CancelledAnswer, Snapshot(traced), modelName, server, transport, stopwatch.Elapsed);
+            throw;
         }
 
         var answer = new ConversationMessage
@@ -97,9 +120,7 @@ public sealed class ChatService(
             SourceLine = result.SourceLine,
             CreatedAt = clock.GetUtcNow(),
         };
-        answer.ToolCalls.AddRange(AuditRecorder.FromEvents(result.ToolEvents, ToolCallOrigins.Chat,
-            connection is null ? "-" : $"{connection.ServerName} {connection.ServerVersion}",
-            connection?.Transport ?? "-", result.Model, conversation.Id));
+        answer.ToolCalls.AddRange(AuditRecorder.FromEvents(result.ToolEvents, ToolCallOrigins.Chat, server, transport, result.Model, conversation.Id));
         db.Messages.Add(answer);
         conversation.UpdatedAt = answer.CreatedAt;
 
@@ -107,6 +128,55 @@ public sealed class ChatService(
         await db.SaveChangesAsync(CancellationToken.None);
 
         emit(ChatStreamEvent.Answer, new AnswerEvent(answer.Id, result.Answer, result.Model, answer.ElapsedMs ?? 0, result.SourceLine, result.UsedTools));
+    }
+
+    public const string CancelledAnswer = "(resposta cancelada antes de terminar)";
+
+    /// <summary>
+    /// A turn without an answer still records an assistant message (so the history keeps alternating) and the
+    /// audit rows of the MCP calls that already reached the server.
+    /// </summary>
+    private async Task SaveInterruptedTurnAsync(Conversation conversation, string note, IReadOnlyList<ToolTraceEvent> events,
+        string modelName, string server, string transport, TimeSpan elapsed)
+    {
+        var message = new ConversationMessage
+        {
+            ConversationId = conversation.Id,
+            Role = MessageRoles.Assistant,
+            Content = note,
+            Model = modelName,
+            ElapsedMs = (int)elapsed.TotalMilliseconds,
+            CreatedAt = clock.GetUtcNow(),
+        };
+        message.ToolCalls.AddRange(AuditRecorder.FromEvents(events, ToolCallOrigins.Chat, server, transport, modelName, conversation.Id));
+        db.Messages.Add(message);
+        conversation.UpdatedAt = message.CreatedAt;
+        await db.SaveChangesAsync(CancellationToken.None);
+    }
+
+    /// <summary>Cuts on a character boundary: a lone surrogate (half an emoji) makes PostgreSQL reject the text.</summary>
+    internal static string Truncate(string text, int maxLength)
+    {
+        if (text.Length <= maxLength)
+        {
+            return text;
+        }
+
+        var cut = maxLength - 1;
+        if (char.IsHighSurrogate(text[cut - 1]))
+        {
+            cut--;
+        }
+
+        return text[..cut] + "…";
+    }
+
+    private static List<ToolTraceEvent> Snapshot(List<ToolTraceEvent> events)
+    {
+        lock (events)
+        {
+            return [.. events];
+        }
     }
 
     private async Task<Conversation> LoadOrCreateConversationAsync(Guid? id, string question, CancellationToken cancellationToken)
@@ -120,7 +190,7 @@ public sealed class ChatService(
         var conversation = new Conversation
         {
             Id = Guid.CreateVersion7(),
-            Title = question.Length <= MaxTitleLength ? question : question[..(MaxTitleLength - 1)] + "…",
+            Title = Truncate(question, MaxTitleLength),
             CreatedAt = now,
             UpdatedAt = now,
         };

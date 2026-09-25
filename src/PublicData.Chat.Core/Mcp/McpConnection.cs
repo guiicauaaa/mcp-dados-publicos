@@ -86,7 +86,7 @@ public sealed class McpConnection : IAsyncDisposable
         }
 
         var stopwatch = Stopwatch.StartNew();
-        McpClient client;
+        McpClient? client = null;
         try
         {
             client = await McpClient.CreateAsync(transport, new McpClientOptions
@@ -96,14 +96,36 @@ public sealed class McpConnection : IAsyncDisposable
                 DiscoverProbeTimeout = TimeSpan.FromSeconds(30),
                 InitializationTimeout = TimeSpan.FromSeconds(60),
             }, loggerFactory, cancellationToken);
+
+            var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
+            return new McpConnection(client, [.. tools], settings.UseHttp ? "http" : "stdio", endpoint, stopwatch.Elapsed);
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
+            // Never leave a half-open session (and, over stdio, a child process) behind.
+            if (client is not null)
+            {
+                await client.DisposeAsync();
+            }
+
             throw new McpStartupException($"O servidor MCP não iniciou ({endpoint}): {ex.Message}", ex);
         }
+    }
 
-        var tools = await client.ListToolsAsync(cancellationToken: cancellationToken);
-        return new McpConnection(client, [.. tools], settings.UseHttp ? "http" : "stdio", endpoint, stopwatch.Elapsed);
+    /// <summary>Liveness probe: tools/list (the 2026-07-28 protocol has no ping).</summary>
+    public async Task<bool> IsAliveAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            await Client.ListToolsAsync(cancellationToken: timeout.Token);
+            return true;
+        }
+        catch (Exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return false;
+        }
     }
 
     public ValueTask DisposeAsync() => Client.DisposeAsync();

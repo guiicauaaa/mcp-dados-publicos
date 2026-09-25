@@ -35,10 +35,18 @@ public sealed class ToolInvoker(IMcpGateway mcp, AppDbContext db)
             CallContent = new FunctionCallContent("manual_" + Guid.NewGuid().ToString("N")[..8], toolName, arguments),
         };
 
-        var result = await invoker(context, cancellationToken);
         var server = $"{connection.ServerName} {connection.ServerVersion}";
-        db.ToolCalls.AddRange(AuditRecorder.FromEvents(events, ToolCallOrigins.Manual, server, connection.Transport, model: null, conversationId: null));
-        await db.SaveChangesAsync(CancellationToken.None);
+        object? result;
+        try
+        {
+            result = await invoker(context, cancellationToken);
+        }
+        finally
+        {
+            // Audited even if the request was aborted mid-call.
+            db.ToolCalls.AddRange(AuditRecorder.FromEvents(events, ToolCallOrigins.Manual, server, connection.Transport, model: null, conversationId: null));
+            await db.SaveChangesAsync(CancellationToken.None);
+        }
 
         var outcome = events.LastOrDefault();
         return new ToolInvokeResponse(toolName, ToolResultShaper.IsError(result), outcome?.ElapsedMs ?? 0,

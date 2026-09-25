@@ -94,4 +94,8 @@ public sealed class FakeModelGateway : IModelGateway
     public string? Model => "fake-model";
 
     public Task<bool> EnsureReadyAsync(CancellationToken cancellationToken) => Task.FromResult(true);
+
+    public List<string> Failures { get; } = [];
+
+    public void ReportFailure(string message) => Failures.Add(message);
 }

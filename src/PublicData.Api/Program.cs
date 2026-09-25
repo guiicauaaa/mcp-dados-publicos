@@ -39,9 +39,9 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true))
+if (app.Configuration.GetValue("Database:ApplyMigrationsOnStartup", true) && !await MigrateAsync(app))
 {
-    await MigrateAsync(app);
+    return 1;
 }
 
 app.UseExceptionHandler();
@@ -58,14 +58,16 @@ app.MapStatusEndpoints();
 app.MapChatEndpoints();
 app.MapConversationEndpoints();
 app.MapAuditEndpoints();
+app.MapFallback("/api/{**path}", () => TypedResults.NotFound()); // unknown API routes are 404, not the SPA page
 app.MapFallbackToFile("index.html");
 
 await app.RunAsync();
 return 0;
 
-// In Docker Compose PostgreSQL may still be starting: retry for a short while before giving up.
-static async Task MigrateAsync(WebApplication app)
+// In Docker Compose PostgreSQL may still be starting: retry for a short while, then stop with a clear message.
+static async Task<bool> MigrateAsync(WebApplication app)
 {
+    const int attempts = 10;
     var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("PublicData.Api.Database");
     for (var attempt = 1; ; attempt++)
     {
@@ -74,11 +76,19 @@ static async Task MigrateAsync(WebApplication app)
             await using var scope = app.Services.CreateAsyncScope();
             await scope.ServiceProvider.GetRequiredService<AppDbContext>().Database.MigrateAsync();
             logger.LogInformation("Banco de dados atualizado (migrations aplicadas).");
-            return;
+            return true;
         }
-        catch (Exception ex) when (attempt < 10 && ex is Npgsql.NpgsqlException or TimeoutException)
+        catch (Exception ex) when (ex is Npgsql.NpgsqlException or TimeoutException)
         {
-            logger.LogWarning("PostgreSQL indisponível ({Message}); nova tentativa em 3 s ({Attempt}/10).", ex.Message, attempt);
+            if (attempt == attempts)
+            {
+                logger.LogError(
+                    "PostgreSQL indisponível ({Message}). Suba o PostgreSQL ou ajuste ConnectionStrings__Default; " +
+                    "sem banco, use a Opção A do README (Docker Compose).", ex.Message);
+                return false;
+            }
+
+            logger.LogWarning("PostgreSQL indisponível ({Message}); nova tentativa em 3 s ({Attempt}/{Attempts}).", ex.Message, attempt, attempts);
             await Task.Delay(TimeSpan.FromSeconds(3));
         }
     }

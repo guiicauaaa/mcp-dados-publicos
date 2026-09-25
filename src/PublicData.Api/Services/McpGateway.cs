@@ -24,6 +24,7 @@ public sealed class McpGateway(ChatSettings settings, ILoggerFactory loggerFacto
 {
     private const int MaxLogLines = 300;
     private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HealthInterval = TimeSpan.FromSeconds(30);
 
     private readonly ILogger<McpGateway> _logger = loggerFactory.CreateLogger<McpGateway>();
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -83,10 +84,20 @@ public sealed class McpGateway(ChatSettings settings, ILoggerFactory loggerFacto
                 continue;
             }
 
-            // Completes when the session ends: the stdio server process died or the transport closed.
-            var details = await connection.Client.Completion.WaitAsync(stoppingToken);
-            await DropAsync(connection, $"A sessão MCP terminou ({details.Exception?.Message ?? "o servidor encerrou a conexão"}). Reconectando…");
-            await Task.Delay(RetryDelay, stoppingToken);
+            // Completion ends when the session ends (the stdio process died). Over stateless HTTP it does not end
+            // when the service goes down, so a light tools/list every 30 s covers that case.
+            var completion = connection.Client.Completion;
+            var ended = await Task.WhenAny(completion, Task.Delay(HealthInterval, stoppingToken));
+            if (ended == completion)
+            {
+                var details = await completion;
+                await DropAsync(connection, $"A sessão MCP terminou ({details.Exception?.Message ?? "o servidor encerrou a conexão"}). Reconectando…");
+                await Task.Delay(RetryDelay, stoppingToken);
+            }
+            else if (!stoppingToken.IsCancellationRequested && !await connection.IsAliveAsync(stoppingToken))
+            {
+                await DropAsync(connection, "O servidor MCP parou de responder. Reconectando…");
+            }
         }
     }
 
@@ -133,8 +144,10 @@ public sealed class McpGateway(ChatSettings settings, ILoggerFactory loggerFacto
             _logger.LogInformation("MCP conectado via {Transport}: {Server} {Version}, protocolo {Protocol}, {Tools} ferramentas",
                 connection.Transport, connection.ServerName, connection.ServerVersion, connection.ProtocolVersion, connection.Tools.Count);
         }
-        catch (McpStartupException ex)
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
         {
+            // Any failure keeps the API up and shows the reason; an exception escaping a BackgroundService
+            // would stop the whole host.
             _status = _status with { State = ComponentState.Unavailable, Message = ex.Message };
             _logger.LogWarning("MCP indisponível: {Message}", ex.Message);
         }
