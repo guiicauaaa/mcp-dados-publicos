@@ -18,6 +18,8 @@ public sealed class MunicipalityDirectoryTests
     [InlineData("Recife", "Pernambuco", "10565000000192")]
     [InlineData("Goiânia", "GO", "01612092000123")]
     [InlineData("goiania", "goias", "01612092000123")]
+    // The Transferegov registers Brasília under the Distrito Federal CNPJ, not the one SICONFI lists.
+    [InlineData("Brasília", "DF", "00394601000126")]
     public void Finds_municipality_ignoring_accents_case_and_state_format(string city, string state, string expectedCnpj)
     {
         var lookup = Directory.Find(city, state);
