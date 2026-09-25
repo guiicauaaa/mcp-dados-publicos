@@ -19,7 +19,15 @@
   </ItemGroup>
   <ItemGroup Label="Banco">
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
+    <!-- Explicit: Npgsql 10.0.3 depends on EF Core 10.0.4; pinning 10.0.12 keeps the API and the tests on the same version. -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.12" />
+    <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
+  </ItemGroup>
+  <ItemGroup Label="API">
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.17.10" />
   </ItemGroup>
   <ItemGroup Label="Testes">
     <PackageVersion Include="xunit.v3" Version="4.0.1" />

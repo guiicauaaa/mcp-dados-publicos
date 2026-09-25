@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/PublicData.McpServer/PublicData.McpServer.csproj" />
+    <Project Path="src/PublicData.Api/PublicData.Api.csproj" />
     <Project Path="src/PublicData.Chat.Core/PublicData.Chat.Core.csproj" />
     <Project Path="src/PublicData.Chat/PublicData.Chat.csproj" />
   </Folder>
